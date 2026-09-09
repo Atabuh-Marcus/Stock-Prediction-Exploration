@@ -1,0 +1,12 @@
+pandas>=2.2
+numpy>=1.26
+scikit-learn>=1.5
+yfinance>=0.2.40
+requests>=2.31
+python-dotenv>=1.0
+fastapi>=0.110
+uvicorn[standard]>=0.29
+joblib>=1.4
+pydantic>=2.6
+jupyter>=1.0
+matplotlib>=3.8

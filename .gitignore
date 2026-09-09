@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+models_store/*.joblib
+data_cache/*
+!data_cache/.gitkeep
+.ipynb_checkpoints/
+.DS_Store

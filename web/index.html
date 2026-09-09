@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stock Prediction</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <h1>Stock Rise / Fall Predictor</h1>
+      <p class="subtitle">Combines multiple market data providers to predict next-session direction and price. Informational only — not financial advice.</p>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="predict">Predict</button>
+      <button class="tab-btn" data-tab="watchlist">Watchlist</button>
+      <button class="tab-btn" data-tab="backtest">Backtest</button>
+    </nav>
+
+    <!-- Predict tab -->
+    <section id="tab-predict" class="tab-panel">
+      <section class="controls">
+        <input id="ticker" type="text" placeholder="e.g. AAPL" autocomplete="off" maxlength="10" />
+        <button id="predictBtn">Predict</button>
+        <button id="trainBtn" class="secondary">Retrain</button>
+      </section>
+
+      <section id="status" class="status" hidden></section>
+
+      <section id="result" class="result" hidden>
+        <div class="result-grid">
+          <div class="card direction-card">
+            <span class="label">Direction</span>
+            <span id="directionValue" class="direction-value"></span>
+            <span id="confidenceValue" class="sub"></span>
+          </div>
+          <div class="card">
+            <span class="label">Last Close</span>
+            <span id="lastClose" class="value"></span>
+          </div>
+          <div class="card">
+            <span class="label">Predicted Price</span>
+            <span id="predictedPrice" class="value"></span>
+            <span id="predictedChange" class="sub"></span>
+          </div>
+          <div class="card">
+            <span class="label">As Of</span>
+            <span id="asOf" class="value"></span>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <canvas id="priceChart" height="90"></canvas>
+        </div>
+
+        <details class="details">
+          <summary>Model metrics &amp; data sources</summary>
+          <pre id="metaJson"></pre>
+        </details>
+      </section>
+    </section>
+
+    <!-- Watchlist tab -->
+    <section id="tab-watchlist" class="tab-panel" hidden>
+      <section class="controls">
+        <input id="watchlistTicker" type="text" placeholder="Add ticker, e.g. AAPL" autocomplete="off" maxlength="10" />
+        <button id="watchlistAddBtn">Add</button>
+        <button id="watchlistRunBtn" class="secondary">Run Watchlist</button>
+      </section>
+
+      <div id="watchlistTags" class="tags"></div>
+
+      <section id="watchlistStatus" class="status" hidden></section>
+
+      <div class="table-card" id="watchlistTableCard" hidden>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Direction</th>
+              <th>Confidence</th>
+              <th>Last Close</th>
+              <th>Predicted</th>
+              <th>Change</th>
+            </tr>
+          </thead>
+          <tbody id="watchlistTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Backtest tab -->
+    <section id="tab-backtest" class="tab-panel" hidden>
+      <section class="controls">
+        <input id="backtestTicker" type="text" placeholder="e.g. AAPL" autocomplete="off" maxlength="10" />
+        <button id="backtestRunBtn">Run Backtest</button>
+      </section>
+
+      <details class="details">
+        <summary>Advanced settings</summary>
+        <div class="advanced-grid">
+          <label>Lookback years<input id="btLookback" type="number" min="1" max="20" value="5" /></label>
+          <label>Retrain every (days)<input id="btRetrainEvery" type="number" min="1" max="250" value="20" /></label>
+          <label>Confidence threshold<input id="btConfidence" type="number" min="0.5" max="0.99" step="0.01" value="0.5" /></label>
+        </div>
+      </details>
+
+      <section id="backtestStatus" class="status" hidden></section>
+
+      <section id="backtestResult" class="result" hidden>
+        <div class="result-grid">
+          <div class="card">
+            <span class="label">Directional Hit Rate</span>
+            <span id="btHitRate" class="value"></span>
+          </div>
+          <div class="card">
+            <span class="label">Strategy Return</span>
+            <span id="btStrategyReturn" class="value"></span>
+          </div>
+          <div class="card">
+            <span class="label">Buy &amp; Hold Return</span>
+            <span id="btBuyHoldReturn" class="value"></span>
+          </div>
+          <div class="card">
+            <span class="label">Sharpe</span>
+            <span id="btSharpe" class="value"></span>
+          </div>
+          <div class="card">
+            <span class="label">Max Drawdown</span>
+            <span id="btMaxDrawdown" class="value"></span>
+          </div>
+          <div class="card">
+            <span class="label">Days In Market</span>
+            <span id="btDaysInMarket" class="value"></span>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <canvas id="backtestChart" height="90"></canvas>
+        </div>
+
+        <p class="sub" id="backtestNote"></p>
+      </section>
+    </section>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
+  <script src="/web/app.js"></script>
+</body>
+</html>

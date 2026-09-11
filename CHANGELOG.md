@@ -159,6 +159,35 @@ when someone opens the app — so it added a scheduled job instead of staying ma
   (0) came back clean, with the prediction-log dedup logic correctly preventing duplicate rows across
   the multiple test runs done the same day.
 
+## 8. Trading signals: rating, indicator breakdown, risk levels, position sizing
+
+Direction + confidence + a price target is informative but not actionable — nothing said what to
+actually *do* with a prediction. Added `app/models/trading_signals.py`, wired into `predict_ticker` so
+every `/predict` and `/watchlist` result now carries a `trading_signal` block:
+
+- **Composite rating** (Strong Buy / Buy / Hold / Sell / Strong Sell): a weighted blend of the ML
+  confidence (60%) and agreement across six technical indicators (RSI, MACD, trend vs. 20d SMA,
+  Bollinger Bands, relative strength vs. SPY, 5-day news sentiment average) at 40%. The ML side is
+  weighted higher deliberately — it's the only piece actually validated via backtesting and Brier-score
+  calibration; the indicator vote is a secondary confirmation/dissent check, not an equal-weight second
+  model.
+- **Indicator breakdown**: each of the six indicators reports bullish/bearish/neutral with a plain-
+  language reason (e.g. "58.9 — neutral range"), so the rating is traceable instead of a black box.
+- **Risk levels**: added `atr()` (Wilder's smoothing) to `app/features/indicators.py`. A Buy/Sell rating
+  gets an ATR-based stop-loss (1.5× ATR) and take-profit (1.5:1 reward:risk); a Hold gets neither — there's
+  no qualifying trade setup to size. A Sell/Strong Sell produces a short setup, explicitly flagged as an
+  extrapolation from the same signals rather than something the (long-only) backtest has validated.
+- **Position sizing**: a suggested position size (% of portfolio), derived from a standard 1%-of-equity
+  risk-per-trade convention divided by the stop distance, scaled down as confidence approaches a coin
+  flip (50%) and capped at 15% of a single position — account-size-independent since the app has no
+  notion of the user's actual capital.
+- Web app: new Trading Signal card on the Predict tab (rating badge, entry/stop/target/size cards,
+  indicator list) and a Rating column on the Watchlist table. CLI: `predict` and `watchlist` output
+  extended to match.
+- Verified against real AAPL data through the full live path (`/predict`, not just the underlying
+  function) and with a Playwright browser pass on both the Predict and Watchlist tabs — zero console
+  errors, rating badge and indicator rows confirmed rendering with live values.
+
 ## Known limitations
 
 - Next-day directional accuracy is close to random (~50–52% in testing) — expected for a model using
@@ -170,3 +199,8 @@ when someone opens the app — so it added a scheduled job instead of staying ma
   roughly 2 years.
 - The backtest strategy is a simplified long/cash simulation — no shorting, fees, slippage, or
   position sizing.
+- The trading-signal rating, stop-loss/take-profit, and position sizing are a deterministic formula
+  layered on top of the model's output (indicator agreement + ATR + a fixed risk-per-trade convention) —
+  they are not separately backtested or calibrated the way the direction/price predictions are, and the
+  short-side setup on a Sell rating is a symmetric extrapolation, not something the long-only backtest
+  has validated.

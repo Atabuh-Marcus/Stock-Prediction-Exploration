@@ -30,8 +30,8 @@ def cmd_watchlist(args: argparse.Namespace) -> None:
     from app.models.predict import predict_watchlist
 
     entries = predict_watchlist(args.tickers)
-    print(f"\n{'TICKER':<8}{'DIRECTION':<12}{'CONFIDENCE':<13}{'LAST CLOSE':<13}{'PREDICTED':<13}{'CHANGE':<10}")
-    print("-" * 69)
+    print(f"\n{'TICKER':<8}{'DIRECTION':<12}{'CONFIDENCE':<13}{'RATING':<14}{'LAST CLOSE':<13}{'PREDICTED':<13}{'CHANGE':<10}")
+    print("-" * 83)
     for entry in entries:
         if entry.error:
             print(f"{entry.ticker:<8}ERROR: {entry.error}")
@@ -40,7 +40,7 @@ def cmd_watchlist(args: argparse.Namespace) -> None:
         arrow = "▲" if r.direction == "rise" else "▼"
         print(
             f"{r.ticker:<8}{arrow} {r.direction.upper():<10}{r.direction_confidence:<13.1%}"
-            f"${r.last_close:<12.2f}${r.predicted_price:<12.2f}{r.predicted_change_pct:+.2f}%"
+            f"{r.trading_signal['rating']:<14}${r.last_close:<12.2f}${r.predicted_price:<12.2f}{r.predicted_change_pct:+.2f}%"
         )
     print("\nInformational only — not financial advice.\n")
 
@@ -102,7 +102,25 @@ def _print_prediction(result) -> None:
     print(f"  Last close:        ${result.last_close}")
     print(f"  Direction:         {arrow} {result.direction.upper()}  ({result.direction_confidence:.1%} confidence)")
     print(f"  Predicted price:   ${result.predicted_price}  ({result.predicted_change_pct:+.2f}%)")
-    print(f"  Data sources:      {result.data_sources}")
+
+    ts = result.trading_signal
+    print(
+        f"\n  Trading signal:    {ts['rating']}  (score {ts['composite_score']:+.2f} — "
+        f"{ts['bullish_count']} bullish / {ts['bearish_count']} bearish / {ts['neutral_count']} neutral indicators)"
+    )
+    for ind in ts["indicators"]:
+        marker = {"bullish": "+", "bearish": "-", "neutral": "·"}[ind["verdict"]]
+        print(f"    [{marker}] {ind['name']:<34} {ind['detail']}")
+    if ts["stop_loss"] is not None:
+        print(
+            f"  Trade setup ({ts['trade_direction']}): entry ${ts['entry_price']}, stop ${ts['stop_loss']}, "
+            f"target ${ts['take_profit']} (risk:reward 1:{ts['risk_reward_ratio']})"
+        )
+        print(f"  Suggested position: {ts['suggested_position_pct']}% of portfolio")
+    print(f"  {ts['position_sizing_note']}")
+    print(f"  {ts['note']}")
+
+    print(f"\n  Data sources:      {result.data_sources}")
     print(f"  Model metrics:     {json.dumps(result.model_metrics, indent=2)}")
     print("\n  Informational only — not financial advice.\n")
 

@@ -27,6 +27,31 @@ TICKER_QUERY = Query(..., min_length=1, max_length=10, pattern=r"^[A-Za-z0-9.\-]
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
+class IndicatorVoteResponse(BaseModel):
+    name: str
+    verdict: Literal["bullish", "bearish", "neutral"]
+    detail: str
+
+
+class TradingSignalResponse(BaseModel):
+    rating: Literal["Strong Buy", "Buy", "Hold", "Sell", "Strong Sell"]
+    composite_score: float = Field(ge=-1, le=1)
+    bullish_count: int
+    bearish_count: int
+    neutral_count: int
+    indicators: list[IndicatorVoteResponse]
+    trade_direction: Literal["long", "short"] | None
+    entry_price: float
+    stop_loss: float | None
+    take_profit: float | None
+    risk_reward_ratio: float | None
+    atr: float
+    atr_pct: float
+    suggested_position_pct: float
+    position_sizing_note: str
+    note: str
+
+
 class PredictionResponse(BaseModel):
     symbol: str
     direction: Literal["rise", "fall"]
@@ -39,6 +64,7 @@ class PredictionResponse(BaseModel):
     model_metrics: dict
     data_sources: dict
     signals: dict
+    trading_signal: TradingSignalResponse
     note: str = "Model output is informational, not financial advice."
 
 
@@ -150,6 +176,7 @@ def _to_prediction_response(result) -> PredictionResponse:
         model_metrics=result.model_metrics,
         data_sources=result.data_sources,
         signals=result.signals,
+        trading_signal=result.trading_signal,
     )
 
 

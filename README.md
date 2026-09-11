@@ -39,6 +39,19 @@ a fundamentally noisy prediction problem. Treat outputs as one input among many,
     at that confidence level, rather than being an arbitrary raw score. `classification_brier_score`
     in the metrics (lower is better; 0.25 = a coin flip) is the metric that actually measures this —
     plain accuracy doesn't.
+- **Trading signals (`app/models/trading_signals.py`)**: turns the raw direction/confidence output into
+  something actionable —
+  - A **composite Buy/Sell/Hold rating** (Strong Buy → Strong Sell) blending the ML confidence (60%,
+    weighted higher since it's the only piece that's actually backtested/calibrated) with agreement
+    across six independent technical indicators (RSI, MACD, trend vs. 20d SMA, Bollinger Bands,
+    relative strength vs. SPY, news sentiment) — 40%.
+  - An **indicator agreement breakdown** showing which indicators are bullish, bearish, or neutral and
+    why, so the rating isn't a black box.
+  - **ATR-based stop-loss / take-profit levels** on a Buy/Sell rating (1.5× ATR stop, 1.5:1 reward:risk),
+    with a `Hold` giving no trade setup.
+  - A **volatility- and confidence-adjusted suggested position size** (% of portfolio), from a standard
+    1%-of-equity risk-per-trade assumption scaled down as confidence approaches a coin flip, capped at
+    15% of a single position.
 - **Backtesting (`app/models/backtest.py`)**: walk-forward validation — retrains periodically using
   only data available up to that point, then simulates a simple long/cash strategy (long when
   predicted direction is "rise" with confidence over a threshold, flat otherwise) against a buy & hold
@@ -85,11 +98,13 @@ python -m app.cli serve --reload
 
 Then open http://127.0.0.1:8000 — four tabs:
 
-- **Predict** — single-ticker direction/price prediction, a price chart, and a Signals panel (market
-  context, news sentiment, calibration quality) so what's driving the prediction is visible instead
-  of buried in a JSON blob.
+- **Predict** — single-ticker direction/price prediction, a Trading Signal card (Buy/Sell/Hold rating,
+  indicator breakdown, stop-loss/take-profit, suggested position size), a price chart, and a Signals
+  panel (market context, news sentiment, calibration quality) so what's driving the prediction is
+  visible instead of buried in a JSON blob.
 - **Watchlist** — add tickers (persisted in your browser via localStorage), run them all at once, see
-  a table ranked by confidence, plus a normalized performance-comparison chart across the same tickers.
+  a table ranked by confidence with each ticker's rating, plus a normalized performance-comparison
+  chart across the same tickers.
 - **Backtest** — walk-forward strategy performance vs buy & hold, with an equity-curve chart.
 - **History** — every prediction ever made, with resolved outcomes and a real calibration check
   (accuracy by confidence bucket) as they accumulate over time.
@@ -99,7 +114,8 @@ reuse the saved model until you hit Retrain.
 
 ### API
 
-- `GET /predict?symbol=AAPL` — direction, confidence, predicted price, model metrics
+- `GET /predict?symbol=AAPL` — direction, confidence, predicted price, model metrics, trading signal
+  (rating, indicator breakdown, stop-loss/take-profit, suggested position size)
 - `GET /watchlist?symbols=AAPL,MSFT,GOOGL` — predicts each ticker independently (max 20; one bad
   ticker doesn't fail the batch)
 - `GET /backtest?symbol=AAPL&lookback_years=5&retrain_every_days=20&confidence_threshold=0.5` —

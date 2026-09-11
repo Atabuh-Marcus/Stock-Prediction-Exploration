@@ -33,3 +33,13 @@ def bollinger_bandwidth(series: pd.Series, window: int = 20, num_std: float = 2.
     upper = mid + num_std * std
     lower = mid - num_std * std
     return (upper - lower) / mid.replace(0, 1e-9)
+
+
+def atr(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 14) -> pd.Series:
+    """Average True Range (Wilder's smoothing) — the volatility measure trade
+    risk levels (stop-loss / take-profit distance) are sized from."""
+    prev_close = close.shift(1)
+    true_range = pd.concat(
+        [high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1
+    ).max(axis=1)
+    return true_range.ewm(alpha=1 / window, adjust=False).mean()

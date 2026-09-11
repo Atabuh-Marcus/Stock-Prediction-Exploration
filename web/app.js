@@ -58,6 +58,49 @@ function renderSignals(signals) {
   });
 }
 
+const RATING_CLASSES = {
+  "Strong Buy": "strong-buy",
+  Buy: "buy",
+  Hold: "hold",
+  Sell: "sell",
+  "Strong Sell": "strong-sell",
+};
+
+function renderTradingSignal(ts) {
+  const badge = document.getElementById("ratingBadge");
+  badge.textContent = ts.rating;
+  badge.className = `rating-badge ${RATING_CLASSES[ts.rating] || ""}`;
+  document.getElementById("ratingScore").textContent =
+    `score ${ts.composite_score >= 0 ? "+" : ""}${ts.composite_score.toFixed(2)} · ` +
+    `${ts.bullish_count} bullish / ${ts.bearish_count} bearish / ${ts.neutral_count} neutral indicators`;
+
+  const setupGrid = document.getElementById("tradeSetupGrid");
+  if (ts.stop_loss !== null && ts.take_profit !== null) {
+    document.getElementById("tsEntry").textContent = `$${ts.entry_price.toFixed(2)}`;
+    document.getElementById("tsStopLoss").textContent = `$${ts.stop_loss.toFixed(2)}`;
+    document.getElementById("tsTakeProfit").textContent = `$${ts.take_profit.toFixed(2)}`;
+    document.getElementById("tsPositionPct").textContent = `${ts.suggested_position_pct.toFixed(2)}%`;
+    setupGrid.hidden = false;
+  } else {
+    setupGrid.hidden = true;
+  }
+  document.getElementById("tsSizingNote").textContent = ts.position_sizing_note;
+
+  const list = document.getElementById("indicatorList");
+  list.innerHTML = "";
+  ts.indicators.forEach((ind) => {
+    const row = document.createElement("div");
+    row.className = "indicator-row";
+    row.innerHTML =
+      `<span class="indicator-marker ${ind.verdict}"></span>` +
+      `<span class="indicator-name">${ind.name}</span>` +
+      `<span class="indicator-detail">${ind.detail}</span>`;
+    list.appendChild(row);
+  });
+
+  document.getElementById("tsNote").textContent = ts.note;
+}
+
 function renderCalibrationNote(metrics) {
   const note = document.getElementById("calibrationNote");
   const brier = metrics ? metrics.classification_brier_score : undefined;
@@ -91,6 +134,7 @@ function renderPrediction(result) {
 
   document.getElementById("asOf").textContent = result.as_of;
 
+  renderTradingSignal(result.trading_signal);
   renderSignals(result.signals);
   renderCalibrationNote(result.model_metrics);
 
@@ -277,10 +321,12 @@ watchlistRunBtn.addEventListener("click", async () => {
         const p = entry.prediction;
         const arrow = p.direction === "rise" ? "▲" : "▼";
         const changeSign = p.predicted_change_pct >= 0 ? "+" : "";
+        const ratingClass = RATING_CLASSES[p.trading_signal.rating] || "";
         row.innerHTML = `
           <td>${entry.symbol}</td>
           <td class="direction-value ${p.direction}" style="font-size: 0.9rem">${arrow} ${p.direction.toUpperCase()}</td>
           <td>${(p.direction_confidence * 100).toFixed(1)}%</td>
+          <td><span class="rating-badge small ${ratingClass}">${p.trading_signal.rating}</span></td>
           <td>$${p.last_close.toFixed(2)}</td>
           <td>$${p.predicted_price.toFixed(2)}</td>
           <td style="color: ${p.predicted_change_pct >= 0 ? "var(--up)" : "var(--down)"}">${changeSign}${p.predicted_change_pct.toFixed(2)}%</td>

@@ -8,6 +8,8 @@ from app.data.aggregator import DataAggregator, default_lookback_start, fetch_be
 from app.features.build_features import SIGNAL_COLUMNS, build_latest_feature_row
 from app.models import prediction_log
 from app.models.train import ModelBundle, load_bundle, train_ticker
+from app.models.trading_signals import compute_trading_signal
+from app.models.trading_signals import to_dict as trading_signal_to_dict
 
 
 @dataclass
@@ -23,6 +25,7 @@ class Prediction:
     model_metrics: dict
     data_sources: dict
     signals: dict
+    trading_signal: dict
 
 
 def predict_ticker(ticker: str, retrain_if_missing: bool = True, refresh: bool = False) -> Prediction:
@@ -53,6 +56,7 @@ def predict_ticker(ticker: str, retrain_if_missing: bool = True, refresh: bool =
     as_of_date = str(ohlcv.index[-1].date())
 
     signals = {col: float(latest_features.iloc[0][col]) for col in SIGNAL_COLUMNS if col in latest_features.columns}
+    trading_signal = compute_trading_signal(ohlcv, latest_features.iloc[0], direction, confidence)
 
     horizon = bundle.horizon_days or PREDICTION_HORIZON_DAYS
     prediction_log.record_prediction(
@@ -77,6 +81,7 @@ def predict_ticker(ticker: str, retrain_if_missing: bool = True, refresh: bool =
         model_metrics=bundle.metrics,
         data_sources=source_status,
         signals={k: round(v, 4) for k, v in signals.items()},
+        trading_signal=trading_signal_to_dict(trading_signal),
     )
 
 

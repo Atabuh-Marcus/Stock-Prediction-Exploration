@@ -52,6 +52,36 @@
           </div>
         </div>
 
+        <div class="signal-card" id="tradingSignalCard">
+          <div class="signal-header">
+            <span id="ratingBadge" class="rating-badge"></span>
+            <span id="ratingScore" class="sub"></span>
+          </div>
+
+          <div class="trade-setup-grid" id="tradeSetupGrid" hidden>
+            <div class="card">
+              <span class="label">Entry</span>
+              <span id="tsEntry" class="value"></span>
+            </div>
+            <div class="card">
+              <span class="label">Stop Loss</span>
+              <span id="tsStopLoss" class="value down-text"></span>
+            </div>
+            <div class="card">
+              <span class="label">Take Profit</span>
+              <span id="tsTakeProfit" class="value up-text"></span>
+            </div>
+            <div class="card">
+              <span class="label">Suggested Size</span>
+              <span id="tsPositionPct" class="value"></span>
+            </div>
+          </div>
+          <p class="sub" id="tsSizingNote"></p>
+
+          <div class="indicator-list" id="indicatorList"></div>
+          <p class="sub" id="tsNote"></p>
+        </div>
+
         <div class="chart-card">
           <canvas id="priceChart" height="90"></canvas>
         </div>
@@ -88,6 +118,7 @@
               <th>Ticker</th>
               <th>Direction</th>
               <th>Confidence</th>
+              <th>Rating</th>
               <th>Last Close</th>
               <th>Predicted</th>
               <th>Change</th>

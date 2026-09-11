@@ -46,7 +46,11 @@ def fetch_daily_sentiment(ticker: str, start: date, use_cache: bool = True) -> p
         "tickers": ticker,
         "time_from": f"{start.strftime('%Y%m%d')}T0000",
         "limit": MAX_ARTICLES_PER_CALL,
-        "sort": "EARLIEST",
+        # LATEST (not EARLIEST): for a heavily-covered ticker, article volume can
+        # exceed the 1000-article cap within the lookback window. Sorting earliest
+        # first would burn the whole cap on old articles and never reach recent
+        # ones — exactly backwards, since recency is what matters for prediction.
+        "sort": "LATEST",
         "apikey": ALPHA_VANTAGE_API_KEY,
     }
     try:

@@ -17,6 +17,7 @@
       <button class="tab-btn active" data-tab="predict">Predict</button>
       <button class="tab-btn" data-tab="watchlist">Watchlist</button>
       <button class="tab-btn" data-tab="backtest">Backtest</button>
+      <button class="tab-btn" data-tab="history">History</button>
     </nav>
 
     <!-- Predict tab -->
@@ -55,8 +56,14 @@
           <canvas id="priceChart" height="90"></canvas>
         </div>
 
+        <div class="signals-card">
+          <h3>Signals</h3>
+          <div class="signals-grid" id="signalsGrid"></div>
+          <p class="sub" id="calibrationNote"></p>
+        </div>
+
         <details class="details">
-          <summary>Model metrics &amp; data sources</summary>
+          <summary>Raw model metrics &amp; data sources</summary>
           <pre id="metaJson"></pre>
         </details>
       </section>
@@ -88,6 +95,11 @@
           </thead>
           <tbody id="watchlistTableBody"></tbody>
         </table>
+      </div>
+
+      <div class="chart-card" id="compareChartCard" hidden>
+        <h3>Performance Comparison <span class="sub">(% change over last 180 days)</span></h3>
+        <canvas id="compareChart" height="90"></canvas>
       </div>
     </section>
 
@@ -142,6 +154,55 @@
         </div>
 
         <p class="sub" id="backtestNote"></p>
+      </section>
+    </section>
+
+    <!-- History tab -->
+    <section id="tab-history" class="tab-panel" hidden>
+      <section class="controls">
+        <input id="historyTicker" type="text" placeholder="Filter by ticker (optional)" autocomplete="off" maxlength="10" />
+        <button id="historyLoadBtn">Load History</button>
+      </section>
+
+      <section id="historyStatus" class="status" hidden></section>
+
+      <section id="historyResult" hidden>
+        <div class="result-grid">
+          <div class="card">
+            <span class="label">Total Predictions</span>
+            <span id="histTotal" class="value"></span>
+          </div>
+          <div class="card">
+            <span class="label">Resolved</span>
+            <span id="histResolved" class="value"></span>
+          </div>
+          <div class="card">
+            <span class="label">Accuracy So Far</span>
+            <span id="histAccuracy" class="value"></span>
+          </div>
+        </div>
+
+        <div class="table-card" id="calibrationTableCard" hidden>
+          <table class="data-table">
+            <thead>
+              <tr><th>Confidence Range</th><th>Predictions</th><th>Actual Accuracy</th></tr>
+            </thead>
+            <tbody id="calibrationTableBody"></tbody>
+          </table>
+        </div>
+        <p class="sub">If a confidence range's actual accuracy is well below the range itself, the model is overconfident there — treat those predictions with extra skepticism.</p>
+
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Ticker</th><th>As Of</th><th>Predicted</th><th>Confidence</th>
+                <th>Status</th><th>Predicted Price</th><th>Actual Close</th><th>Result</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody"></tbody>
+          </table>
+        </div>
       </section>
     </section>
   </main>

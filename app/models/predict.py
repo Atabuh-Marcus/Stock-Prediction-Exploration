@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from app.config import DEFAULT_LOOKBACK_YEARS, PREDICTION_HORIZON_DAYS
 from app.data import news_sentiment
 from app.data.aggregator import DataAggregator, default_lookback_start, fetch_benchmark
-from app.features.build_features import build_latest_feature_row
+from app.features.build_features import SIGNAL_COLUMNS, build_latest_feature_row
+from app.models import prediction_log
 from app.models.train import ModelBundle, load_bundle, train_ticker
 
 
@@ -21,6 +22,7 @@ class Prediction:
     predicted_change_pct: float
     model_metrics: dict
     data_sources: dict
+    signals: dict
 
 
 def predict_ticker(ticker: str, retrain_if_missing: bool = True, refresh: bool = False) -> Prediction:
@@ -48,11 +50,25 @@ def predict_ticker(ticker: str, retrain_if_missing: bool = True, refresh: bool =
     last_close = float(ohlcv["close"].iloc[-1])
     predicted_price = last_close * (1 + predicted_return)
     predicted_change_pct = predicted_return * 100
+    as_of_date = str(ohlcv.index[-1].date())
+
+    signals = {col: float(latest_features.iloc[0][col]) for col in SIGNAL_COLUMNS if col in latest_features.columns}
+
+    horizon = bundle.horizon_days or PREDICTION_HORIZON_DAYS
+    prediction_log.record_prediction(
+        ticker=ticker,
+        as_of_date=as_of_date,
+        horizon_days=horizon,
+        predicted_direction=direction,
+        confidence=round(confidence, 4),
+        predicted_price=round(predicted_price, 4),
+        last_close=round(last_close, 4),
+    )
 
     return Prediction(
         ticker=ticker,
-        horizon_days=bundle.horizon_days or PREDICTION_HORIZON_DAYS,
-        as_of_date=str(ohlcv.index[-1].date()),
+        horizon_days=horizon,
+        as_of_date=as_of_date,
         last_close=round(last_close, 4),
         direction=direction,
         direction_confidence=round(confidence, 4),
@@ -60,6 +76,7 @@ def predict_ticker(ticker: str, retrain_if_missing: bool = True, refresh: bool =
         predicted_change_pct=round(predicted_change_pct, 4),
         model_metrics=bundle.metrics,
         data_sources=source_status,
+        signals={k: round(v, 4) for k, v in signals.items()},
     )
 
 

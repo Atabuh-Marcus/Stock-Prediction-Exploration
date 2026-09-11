@@ -43,6 +43,11 @@ a fundamentally noisy prediction problem. Treat outputs as one input among many,
   only data available up to that point, then simulates a simple long/cash strategy (long when
   predicted direction is "rise" with confidence over a threshold, flat otherwise) against a buy & hold
   benchmark. Reports total return, Sharpe, max drawdown, and out-of-sample directional hit rate.
+- **Prediction history (`app/models/prediction_log.py`)**: every prediction (from any interface) is
+  logged to `prediction_log/log.csv`, deduped per ticker/day. Once a prediction's target date has
+  passed, it's automatically reconciled against the actual close price — so over time you get a real
+  track record, not just a backtest's simulated one, plus a live calibration check (accuracy broken
+  down by confidence bucket).
 - **Interfaces**: a CLI, a FastAPI backend, a browser frontend, and a Jupyter notebook — all built
   on the same `app/data`, `app/features`, `app/models` modules, so results are consistent across all four.
 
@@ -66,6 +71,7 @@ python -m app.cli train AAPL                       # train (or retrain) a model
 python -m app.cli predict AAPL                      # predict direction + price (auto-trains if no model saved yet)
 python -m app.cli watchlist AAPL MSFT GOOGL         # predict several tickers at once, ranked by confidence
 python -m app.cli backtest AAPL                     # walk-forward backtest vs buy & hold
+python -m app.cli history [TICKER]                  # past predictions + how they resolved, calibration by confidence bucket
 python -m app.cli serve                             # run the API + web app on http://127.0.0.1:8000
 ```
 
@@ -77,12 +83,16 @@ python -m app.cli serve                             # run the API + web app on h
 python -m app.cli serve --reload
 ```
 
-Then open http://127.0.0.1:8000 — three tabs:
+Then open http://127.0.0.1:8000 — four tabs:
 
-- **Predict** — single-ticker direction/price prediction with a price chart.
-- **Watchlist** — add tickers (persisted in your browser via localStorage), run them all at once,
-  see a table ranked by confidence.
+- **Predict** — single-ticker direction/price prediction, a price chart, and a Signals panel (market
+  context, news sentiment, calibration quality) so what's driving the prediction is visible instead
+  of buried in a JSON blob.
+- **Watchlist** — add tickers (persisted in your browser via localStorage), run them all at once, see
+  a table ranked by confidence, plus a normalized performance-comparison chart across the same tickers.
 - **Backtest** — walk-forward strategy performance vs buy & hold, with an equity-curve chart.
+- **History** — every prediction ever made, with resolved outcomes and a real calibration check
+  (accuracy by confidence bucket) as they accumulate over time.
 
 First prediction/backtest for a ticker trains a model (takes a few seconds to a minute); later runs
 reuse the saved model until you hit Retrain.
@@ -96,6 +106,8 @@ reuse the saved model until you hit Retrain.
   walk-forward backtest, returns metrics + an equity curve
 - `POST /train?symbol=AAPL&lookback_years=5&horizon_days=1` — (re)trains and saves the model
 - `GET /history?symbol=AAPL&days=180` — combined OHLCV history for charting
+- `GET /predictions/history?symbol=AAPL` — logged predictions + resolved outcomes + calibration buckets (symbol optional)
+- `GET /compare?symbols=AAPL,MSFT,SPY&days=180` — normalized (% change) price series for multiple tickers, for overlay charting
 - `GET /health`
 
 All of `/predict`, `/train`, and `/backtest` accept `refresh=true` to bypass the data cache.
@@ -125,13 +137,15 @@ Env vars (set in `.env`, see `.env.example`):
 ```
 app/
   config.py            env vars, paths
-  data/                per-provider fetchers, aggregator (combine), cache (disk cache)
-  features/            technical indicators + labeled feature matrix
-  models/               train.py (fit + save), predict.py (load + infer, watchlist), backtest.py
-  cli.py                 train / predict / watchlist / backtest / serve subcommands
+  data/                per-provider fetchers, aggregator (combine), cache, news_sentiment.py
+  features/            technical indicators + labeled feature matrix (incl. market-context, sentiment)
+  models/               train.py, predict.py, backtest.py, model_factory.py (tuning + calibration),
+                         prediction_log.py (history + reconciliation)
+  cli.py                 train / predict / watchlist / backtest / history / serve subcommands
   main.py                FastAPI app (serves the API and the web/ frontend)
-web/                     browser frontend (Predict / Watchlist / Backtest tabs)
+web/                     browser frontend (Predict / Watchlist / Backtest / History tabs)
 notebooks/               interactive exploration
 models_store/            saved model bundles (*.joblib, gitignored)
-data_cache/               per-ticker OHLCV cache, refreshed daily (gitignored)
+data_cache/               per-ticker OHLCV + sentiment cache, refreshed daily (gitignored)
+prediction_log/           prediction history log (gitignored)
 ```

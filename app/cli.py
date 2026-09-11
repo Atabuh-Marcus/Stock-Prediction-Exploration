@@ -67,6 +67,29 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     print(f"\n  {result.note}\n")
 
 
+def cmd_history(args: argparse.Namespace) -> None:
+    from app.models import prediction_log
+
+    result = prediction_log.get_history(args.ticker)
+    print(f"\nTotal predictions logged: {result['total_predictions']}  Resolved: {result['resolved_predictions']}")
+    if result["accuracy"] is not None:
+        print(f"Accuracy so far: {result['accuracy']:.1%}")
+    if result["calibration_buckets"]:
+        print("\nConfidence vs. actual accuracy:")
+        for b in result["calibration_buckets"]:
+            print(f"  {b['range']:<10} n={b['count']:<5} actual accuracy={b['actual_accuracy']:.1%}")
+    print(f"\n{'TICKER':<8}{'AS OF':<12}{'PREDICTED':<12}{'CONF':<8}{'RESOLVED':<10}{'RESULT':<10}")
+    print("-" * 60)
+    for row in result["rows"][:30]:
+        resolved = "yes" if row["resolved"] else "pending"
+        outcome = "" if row["correct"] is None else ("correct" if row["correct"] else "wrong")
+        print(
+            f"{row['ticker']:<8}{row['as_of_date']:<12}{row['predicted_direction']:<12}"
+            f"{row['confidence']:<8.1%}{resolved:<10}{outcome:<10}"
+        )
+    print()
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     import uvicorn
 
@@ -112,6 +135,10 @@ def build_parser() -> argparse.ArgumentParser:
     backtest_parser.add_argument("--confidence-threshold", type=float, default=0.5)
     backtest_parser.add_argument("--refresh", action="store_true", help="Bypass the data cache, force a fresh fetch")
     backtest_parser.set_defaults(func=cmd_backtest)
+
+    history_parser = subparsers.add_parser("history", help="Show past predictions and how they resolved")
+    history_parser.add_argument("ticker", nargs="?", default=None, help="Filter to one ticker (optional)")
+    history_parser.set_defaults(func=cmd_history)
 
     serve_parser = subparsers.add_parser("serve", help="Run the API + web app")
     serve_parser.add_argument("--host", default="127.0.0.1")

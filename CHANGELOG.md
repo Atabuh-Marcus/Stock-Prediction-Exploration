@@ -114,6 +114,32 @@ Everything below was caught by actually running the thing against live providers
   anyway); re-running a full search at every one of the many walk-forward retrain checkpoints would
   be far too slow, so those reuse the once-tuned settings while still calibrating fresh each time.
 - Feature count went from 17 to 24; `FEATURE_COLUMNS` in `build_features.py` is the source of truth.
+- **Bug found in the same pass**: `news_sentiment.py` originally requested Alpha Vantage's
+  `NEWS_SENTIMENT` with `sort=EARLIEST`. For a heavily-covered ticker like AAPL (25-48 articles/day),
+  the endpoint's 1000-article cap was exhausted by articles from the *start* of the lookback window
+  and never reached recent dates — a live check came back with sentiment data ending 5 months ago.
+  Switched to `sort=LATEST` so the article budget is spent on the most recent (most relevant for
+  prediction) news instead.
+
+## 6. Web UI: signals panel, prediction history, performance comparison
+
+- **Signals panel** (Predict tab): the market-context, sentiment, and calibration numbers added in
+  section 5 were only visible in a collapsed JSON blob. Added a readable panel (RSI, relative-to-SPY
+  returns, market volatility, news sentiment, news volume) plus a plain-language calibration note
+  derived from the Brier score, with the raw JSON still available underneath for anyone who wants it.
+- **Prediction history tracking** (`app/models/prediction_log.py`, new History tab): every prediction
+  is now logged (deduped per ticker/day) and, once its target date has passed, reconciled against the
+  actual close price the next time history is viewed. Surfaces total/resolved counts, running
+  accuracy, a confidence-bucketed calibration table (does "70% confident" actually land ~70% of the
+  time in practice, not just in the backtest), and the full row-level log. New endpoint:
+  `GET /predictions/history`; CLI: `stockpred history [TICKER]`.
+- **Multi-ticker performance comparison** (Watchlist tab): running a watchlist now also renders a
+  normalized (% change from period start) overlay chart across those same tickers — folded into the
+  existing Watchlist tab rather than a new one, since it's naturally the same ticker set. New
+  endpoint: `GET /compare?symbols=...&days=...`.
+- Verified with a full Playwright browser walkthrough (not just endpoint checks) after the Chart.js
+  CDN lesson from the original build — zero console errors, all three additions confirmed rendering
+  with real data via screenshots.
 
 ## Known limitations
 

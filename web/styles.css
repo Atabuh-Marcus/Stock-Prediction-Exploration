@@ -133,6 +133,58 @@ button.secondary {
   margin-bottom: 16px;
 }
 
+.signals-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.signals-card h3,
+.chart-card h3 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.chart-card h3 .sub {
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.signals-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.signal-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.signal-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.signal-value {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.signal-value.positive { color: var(--up); }
+.signal-value.negative { color: var(--down); }
+
 .details {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -263,4 +315,5 @@ button.secondary {
 @media (max-width: 640px) {
   .result-grid { grid-template-columns: repeat(2, 1fr); }
   .advanced-grid { grid-template-columns: 1fr; }
+  .signals-grid { grid-template-columns: repeat(2, 1fr); }
 }

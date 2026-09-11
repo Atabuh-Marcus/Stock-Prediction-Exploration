@@ -9,8 +9,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 MODELS_DIR = BASE_DIR / "models_store"
 DATA_CACHE_DIR = BASE_DIR / "data_cache"
+PREDICTION_LOG_DIR = BASE_DIR / "prediction_log"
 MODELS_DIR.mkdir(exist_ok=True)
 DATA_CACHE_DIR.mkdir(exist_ok=True)
+PREDICTION_LOG_DIR.mkdir(exist_ok=True)
 
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "").strip()

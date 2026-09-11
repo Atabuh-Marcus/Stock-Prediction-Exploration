@@ -5,5 +5,7 @@ __pycache__/
 models_store/*.joblib
 data_cache/*
 !data_cache/.gitkeep
+prediction_log/*
+!prediction_log/.gitkeep
 .ipynb_checkpoints/
 .DS_Store

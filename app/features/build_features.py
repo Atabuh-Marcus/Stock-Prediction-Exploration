@@ -32,6 +32,19 @@ FEATURE_COLUMNS = [
     "news_volume_10d",
 ]
 
+# The subset of FEATURE_COLUMNS worth showing a human directly — the rest are
+# technical-indicator plumbing the model uses but that don't read well on their own.
+SIGNAL_COLUMNS = [
+    "rsi_14d",
+    "spy_relative_return_1d",
+    "spy_relative_return_5d",
+    "spy_relative_return_10d",
+    "market_volatility_10d",
+    "news_sentiment",
+    "news_sentiment_5d_avg",
+    "news_volume_10d",
+]
+
 
 def _price_features(ohlcv: pd.DataFrame) -> pd.DataFrame:
     close = ohlcv["close"]

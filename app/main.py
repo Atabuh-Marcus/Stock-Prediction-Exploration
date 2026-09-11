@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.data.aggregator import DataAggregator, default_lookback_start
 from app.data.base import DataSourceUnavailable
+from app.models import prediction_log
 from app.models.backtest import run_backtest
 from app.models.predict import predict_ticker, predict_watchlist
 from app.models.train import train_ticker
@@ -37,6 +38,7 @@ class PredictionResponse(BaseModel):
     as_of: str
     model_metrics: dict
     data_sources: dict
+    signals: dict
     note: str = "Model output is informational, not financial advice."
 
 
@@ -85,6 +87,51 @@ class BacktestResponse(BaseModel):
     note: str
 
 
+class PredictionLogRow(BaseModel):
+    ticker: str
+    as_of_date: str
+    target_date: str
+    horizon_days: int
+    predicted_direction: str
+    confidence: float
+    predicted_price: float
+    last_close: float
+    resolved: bool
+    actual_close: float | None
+    actual_direction: str | None
+    correct: bool | None
+    realized_change_pct: float | None
+
+
+class CalibrationBucket(BaseModel):
+    range: str
+    count: int
+    actual_accuracy: float
+
+
+class PredictionHistoryResponse(BaseModel):
+    total_predictions: int
+    resolved_predictions: int
+    accuracy: float | None
+    calibration_buckets: list[CalibrationBucket]
+    rows: list[PredictionLogRow]
+
+
+class ComparePoint(BaseModel):
+    date: date
+    pct_change: float
+
+
+class CompareSeriesResponse(BaseModel):
+    symbol: str
+    points: list[ComparePoint]
+    error: str | None
+
+
+class CompareResponse(BaseModel):
+    series: list[CompareSeriesResponse]
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -102,6 +149,7 @@ def _to_prediction_response(result) -> PredictionResponse:
         as_of=result.as_of_date,
         model_metrics=result.model_metrics,
         data_sources=result.data_sources,
+        signals=result.signals,
     )
 
 
@@ -226,6 +274,41 @@ def history(symbol: str = TICKER_QUERY, days: int = Query(180, ge=5, le=3650)) -
         raise HTTPException(status_code=422, detail=str(error)) from error
     except Exception as error:
         raise HTTPException(status_code=502, detail=f"Market data provider error: {error}") from error
+
+
+@app.get("/predictions/history", response_model=PredictionHistoryResponse)
+def predictions_history(
+    symbol: str | None = Query(None, min_length=1, max_length=10, pattern=r"^[A-Za-z0-9.\-]+$")
+) -> PredictionHistoryResponse:
+    result = prediction_log.get_history(symbol.upper() if symbol else None)
+    return PredictionHistoryResponse(**result)
+
+
+@app.get("/compare", response_model=CompareResponse)
+def compare(
+    symbols: str = Query(..., description="Comma-separated tickers, e.g. AAPL,MSFT,SPY"),
+    days: int = Query(180, ge=5, le=3650),
+) -> CompareResponse:
+    tickers = [t.strip().upper() for t in symbols.split(",") if t.strip()]
+    if not tickers:
+        raise HTTPException(status_code=422, detail="Provide at least one ticker in `symbols`.")
+    if len(tickers) > 10:
+        raise HTTPException(status_code=422, detail="Max 10 tickers per comparison request.")
+
+    aggregator = DataAggregator()
+    series_list = []
+    for ticker in tickers:
+        try:
+            ohlcv, _ = aggregator.fetch(ticker, start=default_lookback_start(1))
+            recent = ohlcv["close"].tail(days)
+            base = recent.iloc[0]
+            pct_change = (recent / base - 1) * 100
+            points = [ComparePoint(date=idx.date(), pct_change=round(float(v), 4)) for idx, v in pct_change.items()]
+            series_list.append(CompareSeriesResponse(symbol=ticker, points=points, error=None))
+        except Exception as exc:  # noqa: BLE001 - isolate per-ticker failures, matching /watchlist
+            series_list.append(CompareSeriesResponse(symbol=ticker, points=[], error=str(exc)))
+
+    return CompareResponse(series=series_list)
 
 
 @app.get("/")

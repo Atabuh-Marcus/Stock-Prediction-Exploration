@@ -88,3 +88,19 @@ class DataAggregator:
 
 def default_lookback_start(years: int) -> date:
     return date.today() - timedelta(days=365 * years + 30)
+
+
+BENCHMARK_TICKER = "SPY"
+
+
+def fetch_benchmark(start: date, end: date | None = None, use_cache: bool = True) -> pd.DataFrame | None:
+    """Fetches SPY as a market-context benchmark. Best-effort: returns None on any
+    failure rather than raising, since relative-to-market features are an
+    enhancement — the rest of the pipeline degrades gracefully without them.
+    """
+    try:
+        ohlcv, _ = DataAggregator().fetch(BENCHMARK_TICKER, start=start, end=end, use_cache=use_cache)
+        return ohlcv
+    except Exception as exc:  # noqa: BLE001 - benchmark features are optional
+        logger.warning("Benchmark (%s) fetch failed: %s", BENCHMARK_TICKER, exc)
+        return None

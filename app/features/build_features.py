@@ -23,11 +23,17 @@ FEATURE_COLUMNS = [
     "volatility_20d",
     "volume_change",
     "volume_zscore_20d",
+    "spy_relative_return_1d",
+    "spy_relative_return_5d",
+    "spy_relative_return_10d",
+    "market_volatility_10d",
+    "news_sentiment",
+    "news_sentiment_5d_avg",
+    "news_volume_10d",
 ]
 
 
-def build_feature_frame(ohlcv: pd.DataFrame) -> pd.DataFrame:
-    """Turns raw OHLCV into a model-ready feature matrix (unlabeled)."""
+def _price_features(ohlcv: pd.DataFrame) -> pd.DataFrame:
     close = ohlcv["close"]
     volume = ohlcv["volume"]
 
@@ -58,12 +64,78 @@ def build_feature_frame(ohlcv: pd.DataFrame) -> pd.DataFrame:
     features["volatility_20d"] = close.pct_change().rolling(20).std()
     features["volume_change"] = volume.pct_change()
     features["volume_zscore_20d"] = (volume - volume_mean_20) / volume_std_20.replace(0, np.nan)
+    return features
 
-    return features[FEATURE_COLUMNS]
+
+def _market_context_features(index: pd.DatetimeIndex, benchmark_ohlcv: pd.DataFrame | None) -> pd.DataFrame:
+    """Relative strength vs. the market (SPY) and market-wide volatility. A stock's
+    move relative to the broad market is generally far more informative than its
+    price action in isolation. Neutral (zero) when no benchmark is available, so
+    the rest of the pipeline degrades gracefully rather than breaking.
+    """
+    out = pd.DataFrame(index=index)
+    if benchmark_ohlcv is None or benchmark_ohlcv.empty:
+        out["spy_relative_return_1d"] = 0.0
+        out["spy_relative_return_5d"] = 0.0
+        out["spy_relative_return_10d"] = 0.0
+        out["market_volatility_10d"] = 0.0
+        return out
+
+    spy_close = benchmark_ohlcv["close"].reindex(index).ffill()
+    spy_return_1d = spy_close.pct_change(1)
+    out["spy_relative_return_1d"] = spy_return_1d  # filled in relative to stock below
+    out["spy_relative_return_5d"] = spy_close.pct_change(5)
+    out["spy_relative_return_10d"] = spy_close.pct_change(10)
+    out["market_volatility_10d"] = spy_return_1d.rolling(10).std()
+    return out
+
+
+def _sentiment_features(index: pd.DatetimeIndex, sentiment: pd.DataFrame | None) -> pd.DataFrame:
+    """Daily news sentiment (from Alpha Vantage's NEWS_SENTIMENT endpoint), smoothed
+    and forward-filled — sentiment persists between news events rather than
+    resetting to neutral on quiet days. Neutral (zero) when unavailable (no Alpha
+    Vantage key configured, or the endpoint returned nothing).
+    """
+    out = pd.DataFrame(index=index)
+    if sentiment is None or sentiment.empty:
+        out["news_sentiment"] = 0.0
+        out["news_sentiment_5d_avg"] = 0.0
+        out["news_volume_10d"] = 0.0
+        return out
+
+    daily_score = sentiment["sentiment_score"].reindex(index).ffill().fillna(0.0)
+    daily_count = sentiment["article_count"].reindex(index).fillna(0.0)
+    out["news_sentiment"] = daily_score
+    out["news_sentiment_5d_avg"] = daily_score.rolling(5).mean()
+    out["news_volume_10d"] = daily_count.rolling(10).sum()
+    return out
+
+
+def build_feature_frame(
+    ohlcv: pd.DataFrame,
+    benchmark_ohlcv: pd.DataFrame | None = None,
+    sentiment: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Turns raw OHLCV (+ optional SPY benchmark, + optional news sentiment) into a
+    model-ready feature matrix (unlabeled)."""
+    features = _price_features(ohlcv)
+    market = _market_context_features(ohlcv.index, benchmark_ohlcv)
+    news = _sentiment_features(ohlcv.index, sentiment)
+
+    combined = pd.concat([features, market, news], axis=1)
+    # spy_relative_return_* start as the market's own return; subtract to get excess return.
+    combined["spy_relative_return_1d"] = combined["return_1d"] - combined["spy_relative_return_1d"]
+    combined["spy_relative_return_5d"] = combined["return_5d"] - combined["spy_relative_return_5d"]
+    combined["spy_relative_return_10d"] = combined["return_10d"] - combined["spy_relative_return_10d"]
+
+    return combined[FEATURE_COLUMNS]
 
 
 def build_training_dataset(
-    ohlcv: pd.DataFrame, horizon_days: int = 1
+    ohlcv: pd.DataFrame,
+    horizon_days: int = 1,
+    benchmark_ohlcv: pd.DataFrame | None = None,
+    sentiment: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
     """Builds (features, classification_target, regression_target) aligned and
     trimmed so every row has both a full feature vector and a known future label.
@@ -75,7 +147,7 @@ def build_training_dataset(
     predicting the return and reconstructing price = last_close * (1 + return)
     keeps predictions calibrated to where the stock actually is).
     """
-    features = build_feature_frame(ohlcv)
+    features = build_feature_frame(ohlcv, benchmark_ohlcv, sentiment)
     close = ohlcv["close"]
 
     future_close = close.shift(-horizon_days)
@@ -92,9 +164,13 @@ def build_training_dataset(
     )
 
 
-def build_latest_feature_row(ohlcv: pd.DataFrame) -> pd.DataFrame:
+def build_latest_feature_row(
+    ohlcv: pd.DataFrame,
+    benchmark_ohlcv: pd.DataFrame | None = None,
+    sentiment: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Feature vector for the most recent date, for live prediction."""
-    features = build_feature_frame(ohlcv).replace([np.inf, -np.inf], np.nan).dropna()
+    features = build_feature_frame(ohlcv, benchmark_ohlcv, sentiment).replace([np.inf, -np.inf], np.nan).dropna()
     if features.empty:
         raise ValueError("Not enough history to compute indicators (need ~50+ trading days).")
     return features.iloc[[-1]]

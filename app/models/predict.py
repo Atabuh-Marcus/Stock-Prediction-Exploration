@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.config import DEFAULT_LOOKBACK_YEARS, PREDICTION_HORIZON_DAYS
-from app.data.aggregator import DataAggregator, default_lookback_start
+from app.data import news_sentiment
+from app.data.aggregator import DataAggregator, default_lookback_start, fetch_benchmark
 from app.features.build_features import build_latest_feature_row
 from app.models.train import ModelBundle, load_bundle, train_ticker
 
@@ -30,13 +31,14 @@ def predict_ticker(ticker: str, retrain_if_missing: bool = True, refresh: bool =
             raise ValueError(f"No trained model for '{ticker}' yet. Train it first.")
         bundle = train_ticker(ticker, refresh=refresh)
 
+    start = default_lookback_start(max(1, DEFAULT_LOOKBACK_YEARS // 2))
     aggregator = DataAggregator()
-    ohlcv, source_status = aggregator.fetch(
-        ticker,
-        start=default_lookback_start(max(1, DEFAULT_LOOKBACK_YEARS // 2)),
-        use_cache=not refresh,
-    )
-    latest_features = build_latest_feature_row(ohlcv)[bundle.feature_columns]
+    ohlcv, source_status = aggregator.fetch(ticker, start=start, use_cache=not refresh)
+    benchmark_ohlcv = fetch_benchmark(start=start, use_cache=not refresh)
+    sentiment = news_sentiment.fetch_daily_sentiment(ticker, start=start, use_cache=not refresh)
+    latest_features = build_latest_feature_row(ohlcv, benchmark_ohlcv=benchmark_ohlcv, sentiment=sentiment)[
+        bundle.feature_columns
+    ]
 
     proba_up = float(bundle.classifier.predict_proba(latest_features)[0, 1])
     direction = "rise" if proba_up >= 0.5 else "fall"

@@ -8,26 +8,27 @@ import pandas as pd
 from app.config import DATA_CACHE_DIR
 
 
-def _cache_path(ticker: str) -> Path:
-    return DATA_CACHE_DIR / f"{ticker.upper()}.csv"
+def _cache_path(ticker: str, kind: str = "ohlcv") -> Path:
+    suffix = "" if kind == "ohlcv" else f"_{kind}"
+    return DATA_CACHE_DIR / f"{ticker.upper()}{suffix}.csv"
 
 
-def load(ticker: str) -> pd.DataFrame | None:
-    path = _cache_path(ticker)
+def load(ticker: str, kind: str = "ohlcv") -> pd.DataFrame | None:
+    path = _cache_path(ticker, kind)
     if not path.exists():
         return None
     return pd.read_csv(path, index_col="date", parse_dates=["date"])
 
 
-def save(ticker: str, df: pd.DataFrame) -> None:
-    df.to_csv(_cache_path(ticker), index_label="date")
+def save(ticker: str, df: pd.DataFrame, kind: str = "ohlcv") -> None:
+    df.to_csv(_cache_path(ticker, kind), index_label="date")
 
 
-def is_fresh(ticker: str) -> bool:
+def is_fresh(ticker: str, kind: str = "ohlcv") -> bool:
     """Daily-bar data only changes once a session closes, so a cache written
     earlier today is still correct — no need to re-hit rate-limited APIs again
     until tomorrow."""
-    path = _cache_path(ticker)
+    path = _cache_path(ticker, kind)
     if not path.exists():
         return False
     return datetime.fromtimestamp(path.stat().st_mtime).date() == date.today()

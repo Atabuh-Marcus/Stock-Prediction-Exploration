@@ -87,12 +87,42 @@ Everything below was caught by actually running the thing against live providers
     codes and byte counts of the static files — never actually executed the JS — so this sat broken
     through the whole initial build and first round of fixes.
 
+## 5. Model quality: market context, news sentiment, tuning, calibration
+
+- **Market-context features** (`app/data/aggregator.py::fetch_benchmark`,
+  `app/features/build_features.py`): fetches SPY alongside the target ticker (through the same
+  aggregator/cache, so no new infrastructure) and adds the stock's return relative to SPY at
+  1/5/10 days plus SPY's own rolling volatility as a market-wide risk proxy. Neutral/zero when the
+  benchmark fetch fails, so this never breaks the pipeline.
+- **News sentiment** (`app/data/news_sentiment.py`): daily-aggregated sentiment from Alpha Vantage's
+  `NEWS_SENTIMENT` endpoint (one call per ticker per day, cached like OHLCV data), forward-filled
+  between news events and smoothed with a 5-day average. Neutral/zero when no Alpha Vantage key is
+  configured.
+- **Hyperparameter tuning + confidence calibration** (`app/models/model_factory.py`): replaced
+  default-parameter model fits with `RandomizedSearchCV` over tree depth / learning rate /
+  regularization / leaf size, using `TimeSeriesSplit` cross-validation so no fold ever trains on
+  data from after its validation period. The classifier is further wrapped in
+  `CalibratedClassifierCV` (sigmoid/Platt scaling) so its reported confidence is checked against
+  actual outcomes rather than being a raw, potentially overconfident score — tracked via a new
+  `classification_brier_score` metric (0.25 = coin flip; a live AAPL run came back at 0.2497,
+  honestly reflecting that next-day direction from these features is close to unpredictable, which
+  is the expected and correct result, not a bug).
+- **Backtest consistency**: `run_backtest` uses the same tuned + calibrated model-building path as
+  `train_ticker` (via the shared `model_factory` module), so the backtest actually reflects what the
+  live predict/train path does. Full hyperparameter search only runs once, on the initial
+  walk-forward window (no lookahead — it's the same data the first retrain checkpoint trains on
+  anyway); re-running a full search at every one of the many walk-forward retrain checkpoints would
+  be far too slow, so those reuse the once-tuned settings while still calibrating fresh each time.
+- Feature count went from 17 to 24; `FEATURE_COLUMNS` in `build_features.py` is the source of truth.
+
 ## Known limitations
 
 - Next-day directional accuracy is close to random (~50–52% in testing) — expected for a model using
   only technical indicators on daily bars; treat all outputs as informational, not a trading signal.
 - yfinance availability depends on network/IP (Yahoo does bot-detection and rate-limiting); Alpha
-  Vantage's free tier is capped at ~100 days of history and 25 requests/day; Polygon's free tier caps
-  history at roughly 2 years.
+  Vantage's free tier is capped at ~100 days of history and 25 requests/day (now shared between price
+  and news-sentiment calls — training/predicting a ticker can use 2 AV calls in one run, SPY's price
+  fetch a 3rd, shared across all tickers and cached daily); Polygon's free tier caps history at
+  roughly 2 years.
 - The backtest strategy is a simplified long/cash simulation — no shorting, fees, slippage, or
   position sizing.

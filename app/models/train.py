@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
-from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, roc_auc_score
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.metrics import accuracy_score, brier_score_loss, f1_score, mean_absolute_error, roc_auc_score
 
 from app.config import DEFAULT_LOOKBACK_YEARS, MODELS_DIR, PREDICTION_HORIZON_DAYS
-from app.data.aggregator import DataAggregator, default_lookback_start
+from app.data import news_sentiment
+from app.data.aggregator import DataAggregator, default_lookback_start, fetch_benchmark
 from app.features.build_features import FEATURE_COLUMNS, build_training_dataset
+from app.models import model_factory
 
 TEST_FRACTION = 0.2
 
@@ -21,13 +24,15 @@ class ModelBundle:
     ticker: str
     horizon_days: int
     feature_columns: list[str]
-    classifier: HistGradientBoostingClassifier
+    classifier: CalibratedClassifierCV
     regressor: HistGradientBoostingRegressor
     metrics: dict = field(default_factory=dict)
     trained_at: str = ""
     source_status: dict = field(default_factory=dict)
     last_known_close: float = 0.0
     last_known_date: str = ""
+    classifier_params: dict = field(default_factory=dict)
+    regressor_params: dict = field(default_factory=dict)
 
 
 def _time_based_split(n_rows: int, test_fraction: float) -> int:
@@ -43,11 +48,14 @@ def train_ticker(
 ) -> ModelBundle:
     ticker = ticker.upper().strip()
     aggregator = DataAggregator()
-    ohlcv, source_status = aggregator.fetch(
-        ticker, start=default_lookback_start(lookback_years), use_cache=not refresh
-    )
+    start = default_lookback_start(lookback_years)
+    ohlcv, source_status = aggregator.fetch(ticker, start=start, use_cache=not refresh)
+    benchmark_ohlcv = fetch_benchmark(start=start, use_cache=not refresh)
+    sentiment = news_sentiment.fetch_daily_sentiment(ticker, start=start, use_cache=not refresh)
 
-    features, class_target, reg_target = build_training_dataset(ohlcv, horizon_days)
+    features, class_target, reg_target = build_training_dataset(
+        ohlcv, horizon_days, benchmark_ohlcv=benchmark_ohlcv, sentiment=sentiment
+    )
     if len(features) < 60:
         raise ValueError(
             f"Only {len(features)} usable rows of history for '{ticker}' — need at least 60. "
@@ -59,11 +67,11 @@ def train_ticker(
     y_class_train, y_class_test = class_target.iloc[:split], class_target.iloc[split:]
     y_reg_train, y_reg_test = reg_target.iloc[:split], reg_target.iloc[split:]
 
-    classifier = HistGradientBoostingClassifier(random_state=42)
-    classifier.fit(X_train, y_class_train)
+    classifier_params = model_factory.tune_classifier(X_train, y_class_train)
+    regressor_params = model_factory.tune_regressor(X_train, y_reg_train)
 
-    regressor = HistGradientBoostingRegressor(random_state=42)
-    regressor.fit(X_train, y_reg_train)
+    classifier = model_factory.fit_calibrated_classifier(X_train, y_class_train, classifier_params)
+    regressor = model_factory.fit_regressor(X_train, y_reg_train, regressor_params)
 
     current_close_test = ohlcv["close"].loc[X_test.index]
     metrics = _evaluate(classifier, regressor, X_test, y_class_test, y_reg_test, current_close_test)
@@ -79,13 +87,15 @@ def train_ticker(
         source_status=source_status,
         last_known_close=float(ohlcv["close"].iloc[-1]),
         last_known_date=str(ohlcv.index[-1].date()),
+        classifier_params=classifier_params,
+        regressor_params=regressor_params,
     )
     _save(bundle)
     return bundle
 
 
 def _evaluate(
-    classifier: HistGradientBoostingClassifier,
+    classifier: CalibratedClassifierCV,
     regressor: HistGradientBoostingRegressor,
     X_test: pd.DataFrame,
     y_class_test: pd.Series,
@@ -110,6 +120,11 @@ def _evaluate(
         "test_rows": int(len(X_test)),
         "classification_accuracy": round(float(accuracy_score(y_class_test, class_pred)), 4),
         "classification_f1": round(float(f1_score(y_class_test, class_pred, zero_division=0)), 4),
+        # Brier score: mean squared error between predicted probability and actual
+        # outcome (0/1). Lower is better; 0.25 is what a coin-flip predictor scores.
+        # This is what actually checks whether "70% confident" means right ~70% of
+        # the time, which plain accuracy doesn't tell you.
+        "classification_brier_score": round(float(brier_score_loss(y_class_test, class_proba)), 4),
         "regression_mae": round(float(mean_absolute_error(actual_price, predicted_price)), 4),
         "regression_directional_accuracy": round(float(np.mean(reg_direction_pred == reg_direction_actual)), 4),
     }

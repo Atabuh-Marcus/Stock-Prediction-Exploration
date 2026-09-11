@@ -146,3 +146,36 @@ def load_bundle(ticker: str) -> ModelBundle | None:
     if not path.exists():
         return None
     return joblib.load(path)
+
+
+@dataclass
+class TrainOutcome:
+    ticker: str
+    trained: bool
+    metrics: dict | None
+    error: str | None
+
+
+def train_all(
+    tickers: list[str] | None = None,
+    lookback_years: int = DEFAULT_LOOKBACK_YEARS,
+    horizon_days: int = PREDICTION_HORIZON_DAYS,
+    refresh: bool = False,
+) -> list[TrainOutcome]:
+    """Retrains every ticker independently — one bad/rate-limited instrument
+    doesn't take down the rest of the batch. Defaults to the full curated market
+    universe (`app.universe.MARKET_UNIVERSE`) when no explicit list is given."""
+    if tickers is None:
+        from app.universe import MARKET_UNIVERSE_SYMBOLS
+
+        tickers = MARKET_UNIVERSE_SYMBOLS
+
+    outcomes = []
+    for ticker in tickers:
+        ticker = ticker.upper().strip()
+        try:
+            bundle = train_ticker(ticker, lookback_years=lookback_years, horizon_days=horizon_days, refresh=refresh)
+            outcomes.append(TrainOutcome(ticker=ticker, trained=True, metrics=bundle.metrics, error=None))
+        except Exception as exc:  # noqa: BLE001 - isolate per-ticker failures, matching predict_watchlist
+            outcomes.append(TrainOutcome(ticker=ticker, trained=False, metrics=None, error=str(exc)))
+    return outcomes

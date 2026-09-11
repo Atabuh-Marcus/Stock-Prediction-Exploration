@@ -1,10 +1,43 @@
 # Stock Prediction
 
-Predicts a stock's next-session **direction** (rise/fall, with confidence) and **price** from
-technical indicators, using data combined across multiple market data providers.
+Predicts an instrument's next-session **direction** (rise/fall, with confidence) and **price** from
+technical indicators, using data combined across multiple market data providers. Works on any symbol
+yfinance recognizes, not just stocks — see **Asset classes** below.
 
 Not financial advice — this is a technical-indicator model trained on historical prices, which is
 a fundamentally noisy prediction problem. Treat outputs as one input among many, not a signal to trade on.
+
+## Asset classes
+
+Every ticker field accepts plain equities and yfinance-style symbols for other asset classes — the
+data layer, features, and trading signal all work the same way regardless of asset class:
+
+| Asset class | Example symbols |
+|---|---|
+| Stocks | `AAPL`, `MSFT`, `TSLA` |
+| Crypto | `BTC-USD`, `ETH-USD` |
+| Forex | `EURUSD=X`, `GBPJPY=X` |
+| Indices | `^GSPC` (S&P 500), `^DJI`, `^IXIC` |
+| Commodities (futures) | `GC=F` (gold), `CL=F` (crude oil) |
+
+Alpha Vantage and Polygon are stock-focused, so for non-equity symbols the combined series usually
+falls back to yfinance alone (still fine — see `data_sources` in the response). Spot forex pairs
+report zero volume from Yahoo (no central exchange tape); the volume-derived features are neutralized
+to zero in that case instead of breaking the pipeline, rather than treated as missing data.
+
+## Market universe
+
+`app/universe.py` defines a curated list of ~20 instruments spanning every asset class above (mega-cap
+stocks, top cryptos, major forex pairs, key indices and commodities) — not a literal "every symbol
+that exists" (no provider here offers a discovery/listing endpoint), sized to stay within Alpha
+Vantage's 25-requests/day free quota and keep regular retraining practical. It's the single source of
+truth for:
+
+- The web app's **Markets** tab (see below).
+- `stockpred watchlist` with no arguments, and the daily automation script.
+- `stockpred train-all`, and the weekly retraining automation.
+
+Edit `MARKET_UNIVERSE` in that file to track a different set.
 
 ## How it works
 
@@ -83,12 +116,14 @@ yfinance works with no key. Add the others in `.env` to have their data folded i
 python -m app.cli train AAPL                       # train (or retrain) a model
 python -m app.cli predict AAPL                      # predict direction + price (auto-trains if no model saved yet)
 python -m app.cli watchlist AAPL MSFT GOOGL         # predict several tickers at once, ranked by confidence
+python -m app.cli watchlist                         # same, but for the full curated market universe
+python -m app.cli train-all                         # retrain every instrument in the market universe
 python -m app.cli backtest AAPL                     # walk-forward backtest vs buy & hold
 python -m app.cli history [TICKER]                  # past predictions + how they resolved, calibration by confidence bucket
 python -m app.cli serve                             # run the API + web app on http://127.0.0.1:8000
 ```
 
-`train`, `predict`, and `backtest` all accept `--refresh` to bypass the data cache.
+`train`, `predict`, `backtest`, and `train-all` all accept `--refresh` to bypass the data cache.
 
 ### Web app
 
@@ -96,7 +131,7 @@ python -m app.cli serve                             # run the API + web app on h
 python -m app.cli serve --reload
 ```
 
-Then open http://127.0.0.1:8000 — four tabs:
+Then open http://127.0.0.1:8000 — five tabs:
 
 - **Predict** — single-ticker direction/price prediction, a Trading Signal card (Buy/Sell/Hold rating,
   indicator breakdown, stop-loss/take-profit, suggested position size), a price chart, and a Signals
@@ -108,6 +143,11 @@ Then open http://127.0.0.1:8000 — four tabs:
 - **Backtest** — walk-forward strategy performance vs buy & hold, with an equity-curve chart.
 - **History** — every prediction ever made, with resolved outcomes and a real calibration check
   (accuracy by confidence bucket) as they accumulate over time.
+- **Markets** — every instrument in the curated market universe, grouped by asset class (Stocks,
+  Crypto, Forex, Indices, Commodities), each with its direction/rating/predicted price in one scan.
+  Click any row for a live intraday candlestick chart of that instrument (Yahoo Finance intraday bars,
+  auto-refreshed every 60 seconds while the tab is open) — genuinely live for crypto/forex, which trade
+  around the clock; stocks and indices only move during market hours.
 
 First prediction/backtest for a ticker trains a model (takes a few seconds to a minute); later runs
 reuse the saved model until you hit Retrain.
@@ -116,7 +156,7 @@ reuse the saved model until you hit Retrain.
 
 - `GET /predict?symbol=AAPL` — direction, confidence, predicted price, model metrics, trading signal
   (rating, indicator breakdown, stop-loss/take-profit, suggested position size)
-- `GET /watchlist?symbols=AAPL,MSFT,GOOGL` — predicts each ticker independently (max 20; one bad
+- `GET /watchlist?symbols=AAPL,MSFT,GOOGL` — predicts each ticker independently (max 40; one bad
   ticker doesn't fail the batch)
 - `GET /backtest?symbol=AAPL&lookback_years=5&retrain_every_days=20&confidence_threshold=0.5` —
   walk-forward backtest, returns metrics + an equity curve
@@ -124,34 +164,45 @@ reuse the saved model until you hit Retrain.
 - `GET /history?symbol=AAPL&days=180` — combined OHLCV history for charting
 - `GET /predictions/history?symbol=AAPL` — logged predictions + resolved outcomes + calibration buckets (symbol optional)
 - `GET /compare?symbols=AAPL,MSFT,SPY&days=180` — normalized (% change) price series for multiple tickers, for overlay charting
+- `GET /universe` — the curated market universe (symbol, name, asset class)
+- `GET /intraday?symbol=AAPL&interval=5m` — intraday OHLC candles from yfinance for the live chart
+  (`interval`: `1m`/`2m`/`5m`/`15m`/`30m`/`60m`)
 - `GET /health`
 
 All of `/predict`, `/train`, and `/backtest` accept `refresh=true` to bypass the data cache.
 
 ### Daily automation (macOS)
 
-`scripts/daily_predict.sh` runs `stockpred watchlist` for a fixed ticker list (edit the `TICKERS`
-line in that file to change it) — this is what actually builds up the History tab over time, since
-predictions otherwise only happen when someone opens the app. It's scheduled via a `launchd` agent:
+Two scheduled `launchd` agents, both driven by the market universe (`app/universe.py`) so there's one
+list to edit rather than two:
+
+- `scripts/daily_predict.sh` runs `stockpred watchlist` (all ~20 universe instruments) weekdays at 6pm
+  local time — this is what builds up the History tab over time, since predictions otherwise only
+  happen when someone opens the app.
+- `scripts/weekly_retrain.sh` runs `stockpred train-all --refresh` Sunday evenings — a full
+  hyperparameter search + calibration retrain across the whole universe with fresh data, on its own
+  schedule since it takes far longer than a same-day prediction.
 
 ```bash
 cp scripts/com.atabuhmarcus.stockprediction.dailypredict.plist ~/Library/LaunchAgents/
+cp scripts/com.atabuhmarcus.stockprediction.weeklyretrain.plist ~/Library/LaunchAgents/
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.atabuhmarcus.stockprediction.dailypredict.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.atabuhmarcus.stockprediction.weeklyretrain.plist
 ```
 
-Runs weekdays at 6pm local time (after US market close in any US timezone) — edit the `Hour`/`Minute`
-values in the plist to change it, then `launchctl bootout` and re-`bootstrap` to apply. Output logs to
-`prediction_log/daily_run.log`. To check status, run it once on demand, or remove it entirely:
+Edit the `Hour`/`Minute`/`Weekday` values in either plist to change its schedule, then `launchctl
+bootout` and re-`bootstrap` that one to apply. Output logs to `prediction_log/daily_run.log` and
+`prediction_log/weekly_retrain.log` respectively. To check status, run one on demand, or remove it:
 
 ```bash
-launchctl print gui/$(id -u)/com.atabuhmarcus.stockprediction.dailypredict   # status
-launchctl kickstart gui/$(id -u)/com.atabuhmarcus.stockprediction.dailypredict   # run now
-launchctl bootout gui/$(id -u)/com.atabuhmarcus.stockprediction.dailypredict   # stop + remove
+launchctl print gui/$(id -u)/com.atabuhmarcus.stockprediction.dailypredict      # status (swap in .weeklyretrain for the other job)
+launchctl kickstart gui/$(id -u)/com.atabuhmarcus.stockprediction.dailypredict  # run now
+launchctl bootout gui/$(id -u)/com.atabuhmarcus.stockprediction.dailypredict    # stop + remove
 ```
 
-This only runs while your Mac is on and awake at the scheduled time — a missed run (laptop asleep,
-off, etc.) is just skipped, not queued. If you need it to run regardless of your machine's state,
-that needs a cloud runner (e.g. a scheduled GitHub Actions workflow) instead.
+Both only run while your Mac is on and awake at the scheduled time — a missed run (laptop asleep, off,
+etc.) is just skipped, not queued. If you need them to run regardless of your machine's state, that
+needs a cloud runner (e.g. a scheduled GitHub Actions workflow) instead.
 
 ### Notebook
 

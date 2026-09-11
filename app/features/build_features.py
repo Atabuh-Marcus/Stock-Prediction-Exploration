@@ -75,8 +75,15 @@ def _price_features(ohlcv: pd.DataFrame) -> pd.DataFrame:
     features["bollinger_bandwidth"] = bollinger_bandwidth(close, 20)
     features["volatility_10d"] = close.pct_change().rolling(10).std()
     features["volatility_20d"] = close.pct_change().rolling(20).std()
-    features["volume_change"] = volume.pct_change()
-    features["volume_zscore_20d"] = (volume - volume_mean_20) / volume_std_20.replace(0, np.nan)
+    # Spot forex pairs (e.g. EURUSD=X) report zero volume from Yahoo (OTC market, no
+    # exchange tape) — a constant-zero series makes pct_change/zscore divide-by-zero
+    # into NaN for every row, which would wipe out the entire feature frame via the
+    # dropna() in build_training_dataset/build_latest_feature_row. Neutral (0.0) in
+    # that case instead of a hard failure; other columns' own warmup NaNs (e.g. the
+    # 50-day SMA gap) still trim the start of the series normally.
+    features["volume_change"] = volume.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    volume_zscore = (volume - volume_mean_20) / volume_std_20.replace(0, np.nan)
+    features["volume_zscore_20d"] = volume_zscore.fillna(0.0)
     return features
 
 

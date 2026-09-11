@@ -18,15 +18,21 @@
       <button class="tab-btn" data-tab="watchlist">Watchlist</button>
       <button class="tab-btn" data-tab="backtest">Backtest</button>
       <button class="tab-btn" data-tab="history">History</button>
+      <button class="tab-btn" data-tab="markets">Markets</button>
     </nav>
 
     <!-- Predict tab -->
     <section id="tab-predict" class="tab-panel">
       <section class="controls">
-        <input id="ticker" type="text" placeholder="e.g. AAPL" autocomplete="off" maxlength="10" />
+        <input id="ticker" type="text" placeholder="e.g. AAPL, BTC-USD, EURUSD=X, ^GSPC" autocomplete="off" maxlength="12" />
         <button id="predictBtn">Predict</button>
         <button id="trainBtn" class="secondary">Retrain</button>
       </section>
+      <p class="sub asset-hint">
+        Stocks: <code>AAPL</code> &nbsp;·&nbsp; Crypto: <code>BTC-USD</code> &nbsp;·&nbsp;
+        Forex: <code>EURUSD=X</code> &nbsp;·&nbsp; Index: <code>^GSPC</code> &nbsp;·&nbsp;
+        Commodities: <code>GC=F</code>
+      </p>
 
       <section id="status" class="status" hidden></section>
 
@@ -102,7 +108,7 @@
     <!-- Watchlist tab -->
     <section id="tab-watchlist" class="tab-panel" hidden>
       <section class="controls">
-        <input id="watchlistTicker" type="text" placeholder="Add ticker, e.g. AAPL" autocomplete="off" maxlength="10" />
+        <input id="watchlistTicker" type="text" placeholder="Add ticker, e.g. AAPL or BTC-USD" autocomplete="off" maxlength="12" />
         <button id="watchlistAddBtn">Add</button>
         <button id="watchlistRunBtn" class="secondary">Run Watchlist</button>
       </section>
@@ -137,7 +143,7 @@
     <!-- Backtest tab -->
     <section id="tab-backtest" class="tab-panel" hidden>
       <section class="controls">
-        <input id="backtestTicker" type="text" placeholder="e.g. AAPL" autocomplete="off" maxlength="10" />
+        <input id="backtestTicker" type="text" placeholder="e.g. AAPL" autocomplete="off" maxlength="12" />
         <button id="backtestRunBtn">Run Backtest</button>
       </section>
 
@@ -191,7 +197,7 @@
     <!-- History tab -->
     <section id="tab-history" class="tab-panel" hidden>
       <section class="controls">
-        <input id="historyTicker" type="text" placeholder="Filter by ticker (optional)" autocomplete="off" maxlength="10" />
+        <input id="historyTicker" type="text" placeholder="Filter by ticker (optional)" autocomplete="off" maxlength="12" />
         <button id="historyLoadBtn">Load History</button>
       </section>
 
@@ -236,9 +242,43 @@
         </div>
       </section>
     </section>
+
+    <!-- Markets tab -->
+    <section id="tab-markets" class="tab-panel" hidden>
+      <section class="controls">
+        <button id="marketsRunBtn">Scan All Markets</button>
+        <span class="sub" id="marketsUpdated"></span>
+      </section>
+      <p class="sub">Scans every instrument in the curated market universe (stocks, crypto, forex, indices, commodities) — first run per instrument trains a model, so this can take a while.</p>
+
+      <section id="marketsStatus" class="status" hidden></section>
+
+      <div class="chart-card" id="liveChartCard" hidden>
+        <div class="live-chart-header">
+          <div>
+            <h3 id="liveChartTitle">Live Chart</h3>
+            <span class="sub" id="liveChartMeta"></span>
+          </div>
+          <div class="live-chart-controls">
+            <select id="liveInterval">
+              <option value="5m">5m</option>
+              <option value="15m">15m</option>
+              <option value="30m">30m</option>
+            </select>
+            <span class="live-indicator"><span class="live-dot"></span>LIVE</span>
+          </div>
+        </div>
+        <canvas id="liveCandleChart" height="110"></canvas>
+        <p class="sub">Intraday candles from Yahoo Finance, polled automatically every 60s while this tab is open. Stocks only update during market hours; crypto/forex trade near around the clock.</p>
+      </div>
+
+      <div id="marketsGroups"></div>
+    </section>
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
   <script src="/web/app.js"></script>
 </body>
 </html>

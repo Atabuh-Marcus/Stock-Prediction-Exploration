@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.atabuhmarcus.stockprediction.weeklyretrain</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>/Users/atabuhmarcus/Stocks_Prediction/scripts/weekly_retrain.sh</string>
+    </array>
+
+    <!-- Runs Sunday evening, ahead of the Mon-Fri 6pm daily prediction job — a full
+         hyperparameter search + calibration retrain across the whole market universe
+         takes much longer than a same-day prediction, so it gets the weekend slot.
+         Edit Weekday/Hour/Minute below to change it (Weekday: 0 = Sunday). -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>19</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/atabuhmarcus/Stocks_Prediction/prediction_log/weekly_retrain.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/atabuhmarcus/Stocks_Prediction/prediction_log/weekly_retrain.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

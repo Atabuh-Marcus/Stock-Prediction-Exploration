@@ -11,10 +11,12 @@ from pydantic import BaseModel, Field
 
 from app.data.aggregator import DataAggregator, default_lookback_start
 from app.data.base import DataSourceUnavailable
+from app.data.intraday import VALID_INTERVALS, fetch_intraday
 from app.models import prediction_log
 from app.models.backtest import run_backtest
 from app.models.predict import predict_ticker, predict_watchlist
 from app.models.train import train_ticker
+from app.universe import MARKET_UNIVERSE
 
 app = FastAPI(
     title="Stock Direction Prediction API",
@@ -23,7 +25,10 @@ app = FastAPI(
     version="0.2.0",
 )
 
-TICKER_QUERY = Query(..., min_length=1, max_length=10, pattern=r"^[A-Za-z0-9.\-]+$")
+TICKER_PATTERN = r"^[A-Za-z0-9.\-=^]+$"  # allows plain equities (AAPL) plus yfinance-style
+# symbols for other asset classes: forex (EURUSD=X), crypto (BTC-USD), indices (^GSPC),
+# commodity futures (GC=F).
+TICKER_QUERY = Query(..., min_length=1, max_length=12, pattern=TICKER_PATTERN)
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
@@ -158,9 +163,63 @@ class CompareResponse(BaseModel):
     series: list[CompareSeriesResponse]
 
 
+class InstrumentResponse(BaseModel):
+    symbol: str
+    name: str
+    asset_class: str
+
+
+class IntradayPoint(BaseModel):
+    time: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class IntradayResponse(BaseModel):
+    symbol: str
+    interval: str
+    points: list[IntradayPoint]
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/universe", response_model=list[InstrumentResponse])
+def universe() -> list[InstrumentResponse]:
+    return [InstrumentResponse(symbol=i.symbol, name=i.name, asset_class=i.asset_class) for i in MARKET_UNIVERSE]
+
+
+@app.get("/intraday", response_model=IntradayResponse)
+def intraday(
+    symbol: str = TICKER_QUERY,
+    interval: str = Query("5m", description=f"One of {sorted(VALID_INTERVALS)}"),
+) -> IntradayResponse:
+    normalized_symbol = symbol.upper()
+    if interval not in VALID_INTERVALS:
+        raise HTTPException(status_code=422, detail=f"interval must be one of {sorted(VALID_INTERVALS)}")
+    try:
+        df = fetch_intraday(normalized_symbol, interval=interval)
+        points = [
+            IntradayPoint(
+                time=idx.isoformat(),
+                open=round(float(row.open), 6),
+                high=round(float(row.high), 6),
+                low=round(float(row.low), 6),
+                close=round(float(row.close), 6),
+                volume=float(row.volume),
+            )
+            for idx, row in df.iterrows()
+        ]
+        return IntradayResponse(symbol=normalized_symbol, interval=interval, points=points)
+    except DataSourceUnavailable as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Market data provider error: {error}") from error
 
 
 def _to_prediction_response(result) -> PredictionResponse:
@@ -199,8 +258,8 @@ def watchlist(symbols: str = Query(..., description="Comma-separated tickers, e.
     tickers = [t.strip().upper() for t in symbols.split(",") if t.strip()]
     if not tickers:
         raise HTTPException(status_code=422, detail="Provide at least one ticker in `symbols`.")
-    if len(tickers) > 20:
-        raise HTTPException(status_code=422, detail="Max 20 tickers per watchlist request.")
+    if len(tickers) > 40:
+        raise HTTPException(status_code=422, detail="Max 40 tickers per watchlist request.")
 
     entries = predict_watchlist(tickers)
     return [
@@ -305,7 +364,7 @@ def history(symbol: str = TICKER_QUERY, days: int = Query(180, ge=5, le=3650)) -
 
 @app.get("/predictions/history", response_model=PredictionHistoryResponse)
 def predictions_history(
-    symbol: str | None = Query(None, min_length=1, max_length=10, pattern=r"^[A-Za-z0-9.\-]+$")
+    symbol: str | None = Query(None, min_length=1, max_length=12, pattern=TICKER_PATTERN)
 ) -> PredictionHistoryResponse:
     result = prediction_log.get_history(symbol.upper() if symbol else None)
     return PredictionHistoryResponse(**result)

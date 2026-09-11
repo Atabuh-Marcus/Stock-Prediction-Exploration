@@ -1,18 +1,19 @@
 #!/bin/zsh
-# Runs the daily watchlist prediction. Invoked automatically by launchd
-# (see scripts/com.atabuhmarcus.stockprediction.dailypredict.plist), but safe
-# to run manually too: ./scripts/daily_predict.sh
+# Runs the daily watchlist prediction across the full curated market universe
+# (app/universe.py). Invoked automatically by launchd (see
+# scripts/com.atabuhmarcus.stockprediction.dailypredict.plist), but safe to run
+# manually too: ./scripts/daily_predict.sh
 #
-# Edit the ticker list below to track different symbols.
+# To track a different/smaller set instead, pass explicit tickers to
+# `python -m app.cli watchlist` below — with none given it defaults to the universe.
 
 set -euo pipefail
 
 PROJECT_DIR="/Users/atabuhmarcus/Stocks_Prediction"
-TICKERS=(AAPL MSFT GOOGL AMZN)
 
 cd "$PROJECT_DIR"
 source "$PROJECT_DIR/.venv/bin/activate"
 
 echo "=== Daily prediction run: $(date) ==="
-python -m app.cli watchlist "${TICKERS[@]}"
+python -m app.cli watchlist
 echo ""

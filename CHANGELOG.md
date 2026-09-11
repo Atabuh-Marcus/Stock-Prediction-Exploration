@@ -188,6 +188,77 @@ every `/predict` and `/watchlist` result now carries a `trading_signal` block:
   function) and with a Playwright browser pass on both the Predict and Watchlist tabs — zero console
   errors, rating badge and indicator rows confirmed rendering with live values.
 
+## 9. Multi-asset support: crypto, forex, indices, commodities
+
+Every ticker field previously accepted only plain equity-style symbols. Widened to accept any
+yfinance-style symbol, since the data/feature/model pipeline already had no actual dependency on the
+instrument being a stock:
+
+- Loosened the ticker validation regex (`app/main.py`) to allow `=` and `^` alongside the existing
+  letters/digits/`.`/`-`, covering crypto (`BTC-USD`), forex (`EURUSD=X`), indices (`^GSPC`), and
+  commodity futures (`GC=F`) symbol formats, and bumped the max length from 10 to 12 to fit them.
+- **Bug found while testing this (via synthetic data, since forex data isn't reachable from this
+  sandbox — see note below)**: spot forex pairs report zero volume from Yahoo (no central exchange
+  tape for OTC forex), and a constant-zero volume series turns `volume_change` (`pct_change`) and
+  `volume_zscore_20d` into NaN for *every* row via 0/0 division — which would silently wipe out the
+  entire feature frame through the `dropna()` in `build_training_dataset`/`build_latest_feature_row`,
+  making prediction impossible for any zero-volume instrument. Fixed in
+  `app/features/build_features.py::_price_features` by neutralizing those two columns to 0.0 in that
+  case instead of leaving them NaN — other columns' own warmup NaNs (e.g. the 50-day SMA gap) still
+  trim the start of the series normally, so this doesn't mask genuine missing history.
+- Web app: ticker inputs' placeholder/format hint updated with example symbols across asset classes.
+- **Testing note**: this sandbox's network blocks Yahoo Finance with a TLS interception error (a
+  known sandbox-specific restriction seen earlier in this project's development, not a code issue —
+  see section 2) for any symbol not already cached, so BTC-USD/EURUSD=X/^GSPC/GC=F could not be
+  fetched live from here. Verified instead with synthetic OHLCV (including a zero-volume series
+  simulating real forex data) through the actual feature-building functions; AAPL (already cached)
+  continued to predict correctly through the live server after the change. Live confirmation of a
+  real crypto/forex/index fetch is still worth doing on your own machine.
+
+## 10. Market universe, Markets dashboard, live intraday candles, regular retraining
+
+Asked to cover more tradeable instruments in one place, with a live chart and regular retraining
+across all of it. Four pieces:
+
+- **`app/universe.py`** (new): a curated ~22-instrument list across every supported asset class
+  (10 mega-cap stocks, 3 crypto, 3 forex pairs, 3 indices, 3 commodities) — not a literal "every symbol
+  that exists," since no provider here has a discovery endpoint, and an unbounded list would blow
+  through Alpha Vantage's 25-requests/day free quota and make retraining impractically slow. Now the
+  single source of truth for the Markets tab, `stockpred watchlist` with no arguments, and the new
+  `stockpred train-all`.
+- **Live intraday candlestick chart** (`app/data/intraday.py`, `GET /intraday`, new Markets tab): a
+  separate yfinance-only intraday fetch path (1m–60m bars) — deliberately not folded into the daily
+  `DataAggregator`, since its day-level freshness cache and multi-source median combination don't apply
+  to a chart that's supposed to update every poll. No free provider here offers real tick-level
+  streaming, so "live" means the chart polls this endpoint every 60 seconds while the tab is open —
+  genuinely live-ish for crypto/forex (trade ~24/7), market-hours-only for stocks/indices.
+  - Rendered with `chartjs-chart-financial` + `chartjs-adapter-date-fns` (candlestick chart type isn't
+    built into Chart.js). Neither is on cdnjs (checked directly — chartjs-chart-financial isn't listed
+    there at all), so these load from jsDelivr instead; unlike the Artifact tool's publishing sandbox,
+    this is a plain FastAPI-served page with no CDN allowlist. Verified both are genuine UMD bundles
+    (not ESM-only) and version-compatible with the already-pinned Chart.js 4.5.1 by inspecting each
+    package's `package.json` peer dependencies and the first bytes of the actual served file before
+    wiring them in — the kind of check that would have caught the original Chart.js version/build
+    mistake (section 3) before it shipped, rather than after.
+- **Markets tab**: scans the whole universe via the existing `/watchlist` (cap raised 20 → 40 to fit
+  it), grouped into per-asset-class tables; clicking a row selects that instrument's live chart.
+- **Regular retraining across the universe**: `train_all()` (`app/models/train.py`) and
+  `stockpred train-all` retrain every universe instrument with the same per-ticker error isolation as
+  `predict_watchlist`. New `scripts/weekly_retrain.sh` + `com.atabuhmarcus.stockprediction.
+  weeklyretrain.plist` run it Sunday evenings — on its own schedule and separate from the daily
+  prediction job, since a full hyperparameter search + calibration across ~20 instruments takes far
+  longer than a same-day prediction. `scripts/daily_predict.sh` now runs the full universe too (was a
+  hardcoded 4-stock list), so the History tab's calibration data builds up across every asset class,
+  not just the original stocks.
+- **Testing note**: this sandbox's network blocks live Yahoo Finance calls for anything not already
+  cached (see section 9), so a full live Markets scan and a genuine live intraday fetch couldn't be
+  run from here. Verified instead by mocking `/universe`, `/watchlist`, and `/intraday` in a real
+  browser (Playwright) with realistic response shapes — confirmed the candlestick chart renders
+  correctly (including axis scaling for both an AAPL-range and a BTC-USD-range dataset), asset-class
+  grouping, per-row error isolation, row-click symbol switching, and interval switching, all with zero
+  console errors — plus the CLI (`watchlist`, `predict`, `train-all --help`) against already-cached
+  AAPL data. A real live scan and intraday feed are still worth confirming on your own machine.
+
 ## Known limitations
 
 - Next-day directional accuracy is close to random (~50–52% in testing) — expected for a model using
@@ -204,3 +275,7 @@ every `/predict` and `/watchlist` result now carries a `trading_signal` block:
   they are not separately backtested or calibrated the way the direction/price predictions are, and the
   short-side setup on a Sell rating is a symmetric extrapolation, not something the long-only backtest
   has validated.
+- The Markets tab's "live" chart is 60-second polling of intraday bars, not real-time tick streaming —
+  no free data provider here offers that. The market universe is a fixed curated list (`app/universe.py`),
+  not every instrument that exists; predictions and the trading signal still carry the same ~50–52%
+  directional accuracy regardless of asset class.

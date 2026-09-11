@@ -233,6 +233,12 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     document.querySelectorAll(".tab-panel").forEach((p) => (p.hidden = true));
     btn.classList.add("active");
     document.getElementById(`tab-${btn.dataset.tab}`).hidden = false;
+
+    if (btn.dataset.tab === "markets") {
+      resumeLivePolling();
+    } else {
+      pauseLivePolling();
+    }
   });
 });
 
@@ -567,3 +573,183 @@ historyLoadBtn.addEventListener("click", async () => {
     historyLoadBtn.disabled = false;
   }
 });
+
+// --- Markets ---
+const ASSET_CLASS_ORDER = ["stocks", "crypto", "forex", "indices", "commodities"];
+const ASSET_CLASS_LABELS = {
+  stocks: "Stocks",
+  crypto: "Crypto",
+  forex: "Forex",
+  indices: "Indices",
+  commodities: "Commodities",
+};
+const LIVE_POLL_MS = 60000;
+
+const marketsRunBtn = document.getElementById("marketsRunBtn");
+const marketsStatusEl = document.getElementById("marketsStatus");
+const marketsUpdatedEl = document.getElementById("marketsUpdated");
+const marketsGroupsEl = document.getElementById("marketsGroups");
+const liveChartCard = document.getElementById("liveChartCard");
+const liveChartTitleEl = document.getElementById("liveChartTitle");
+const liveChartMetaEl = document.getElementById("liveChartMeta");
+const liveIntervalSelect = document.getElementById("liveInterval");
+
+let universeCache = null;
+let liveCandleChart = null;
+let liveSymbol = null;
+let liveSymbolName = null;
+let livePollTimer = null;
+
+function setMarketsStatus(message, isError = false) {
+  marketsStatusEl.hidden = !message;
+  marketsStatusEl.textContent = message || "";
+  marketsStatusEl.classList.toggle("error", isError);
+}
+
+async function loadUniverse() {
+  if (!universeCache) universeCache = await fetchJson("/universe");
+  return universeCache;
+}
+
+async function runMarketsScan() {
+  marketsRunBtn.disabled = true;
+  setMarketsStatus("Scanning all tracked markets... first run per instrument trains a model, can take a while.");
+  try {
+    const instruments = await loadUniverse();
+    const symbols = instruments.map((i) => i.symbol);
+    const entries = await fetchJson(`/watchlist?symbols=${encodeURIComponent(symbols.join(","))}`);
+    renderMarketsGroups(instruments, entries);
+    marketsUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    setMarketsStatus("");
+  } catch (err) {
+    setMarketsStatus(err.message, true);
+  } finally {
+    marketsRunBtn.disabled = false;
+  }
+}
+
+function renderMarketsGroups(instruments, entries) {
+  const meta = Object.fromEntries(instruments.map((i) => [i.symbol, i]));
+  const byClass = {};
+  entries.forEach((entry) => {
+    const cls = meta[entry.symbol]?.asset_class || "stocks";
+    (byClass[cls] ||= []).push(entry);
+  });
+
+  marketsGroupsEl.innerHTML = "";
+  ASSET_CLASS_ORDER.filter((cls) => byClass[cls]?.length).forEach((cls) => {
+    const card = document.createElement("div");
+    card.className = "table-card markets-group";
+    const table = document.createElement("table");
+    table.className = "data-table";
+    table.innerHTML = `
+      <caption>${ASSET_CLASS_LABELS[cls]}</caption>
+      <thead>
+        <tr><th>Symbol</th><th>Direction</th><th>Confidence</th><th>Rating</th><th>Last</th><th>Predicted</th><th>Change</th></tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    const tbody = table.querySelector("tbody");
+    byClass[cls].forEach((entry) => {
+      const row = document.createElement("tr");
+      const name = meta[entry.symbol]?.name || "";
+      if (entry.error) {
+        row.innerHTML = `<td>${entry.symbol}<div class="sub">${name}</div></td><td colspan="6" style="color: var(--down)">${entry.error}</td>`;
+      } else {
+        const p = entry.prediction;
+        const arrow = p.direction === "rise" ? "▲" : "▼";
+        const changeSign = p.predicted_change_pct >= 0 ? "+" : "";
+        const ratingClass = RATING_CLASSES[p.trading_signal.rating] || "";
+        row.className = "markets-row";
+        row.title = `View live chart for ${entry.symbol}`;
+        row.innerHTML = `
+          <td>${entry.symbol}<div class="sub">${name}</div></td>
+          <td class="direction-value ${p.direction}" style="font-size: 0.9rem">${arrow} ${p.direction.toUpperCase()}</td>
+          <td>${(p.direction_confidence * 100).toFixed(1)}%</td>
+          <td><span class="rating-badge small ${ratingClass}">${p.trading_signal.rating}</span></td>
+          <td>$${p.last_close.toFixed(2)}</td>
+          <td>$${p.predicted_price.toFixed(2)}</td>
+          <td style="color: ${p.predicted_change_pct >= 0 ? "var(--up)" : "var(--down)"}">${changeSign}${p.predicted_change_pct.toFixed(2)}%</td>
+        `;
+        row.addEventListener("click", () => selectLiveSymbol(entry.symbol, name));
+      }
+      tbody.appendChild(row);
+    });
+    card.appendChild(table);
+    marketsGroupsEl.appendChild(card);
+  });
+
+  if (!liveSymbol) {
+    const firstOk = entries.find((e) => !e.error);
+    if (firstOk) selectLiveSymbol(firstOk.symbol, meta[firstOk.symbol]?.name || "");
+  }
+}
+
+function selectLiveSymbol(symbol, name) {
+  liveSymbol = symbol;
+  liveSymbolName = name;
+  liveChartTitleEl.textContent = name ? `${symbol} — ${name}` : symbol;
+  liveChartCard.hidden = false;
+  loadLiveChart();
+  resumeLivePolling();
+}
+
+async function loadLiveChart() {
+  if (!liveSymbol) return;
+  const interval = liveIntervalSelect.value;
+  try {
+    const data = await fetchJson(`/intraday?symbol=${encodeURIComponent(liveSymbol)}&interval=${interval}`);
+    renderLiveCandleChart(data.points);
+    liveChartMetaEl.textContent = `${interval} candles · last updated ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    liveChartMetaEl.textContent = `Live data unavailable: ${err.message}`;
+  }
+}
+
+function renderLiveCandleChart(points) {
+  const ctx = document.getElementById("liveCandleChart");
+  const data = points.map((p) => ({
+    x: new Date(p.time).getTime(),
+    o: p.open,
+    h: p.high,
+    l: p.low,
+    c: p.close,
+  }));
+
+  if (liveCandleChart) liveCandleChart.destroy();
+  liveCandleChart = new Chart(ctx, {
+    type: "candlestick",
+    data: {
+      datasets: [
+        {
+          label: liveSymbol,
+          data,
+          color: { up: "#22c55e", down: "#ef4444", unchanged: "#8b93a7" },
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { type: "time", ticks: { color: "#8b93a7", maxTicksLimit: 8 }, grid: { display: false } },
+        y: { ticks: { color: "#8b93a7" }, grid: { color: "#232838" } },
+      },
+    },
+  });
+}
+
+function resumeLivePolling() {
+  if (!liveSymbol || livePollTimer) return;
+  livePollTimer = setInterval(loadLiveChart, LIVE_POLL_MS);
+}
+
+function pauseLivePolling() {
+  if (livePollTimer) {
+    clearInterval(livePollTimer);
+    livePollTimer = null;
+  }
+}
+
+liveIntervalSelect.addEventListener("change", loadLiveChart);
+marketsRunBtn.addEventListener("click", runMarketsScan);

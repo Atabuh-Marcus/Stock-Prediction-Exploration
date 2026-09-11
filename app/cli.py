@@ -28,8 +28,10 @@ def cmd_predict(args: argparse.Namespace) -> None:
 
 def cmd_watchlist(args: argparse.Namespace) -> None:
     from app.models.predict import predict_watchlist
+    from app.universe import MARKET_UNIVERSE_SYMBOLS
 
-    entries = predict_watchlist(args.tickers)
+    tickers = args.tickers or MARKET_UNIVERSE_SYMBOLS
+    entries = predict_watchlist(tickers)
     print(f"\n{'TICKER':<8}{'DIRECTION':<12}{'CONFIDENCE':<13}{'RATING':<14}{'LAST CLOSE':<13}{'PREDICTED':<13}{'CHANGE':<10}")
     print("-" * 83)
     for entry in entries:
@@ -43,6 +45,21 @@ def cmd_watchlist(args: argparse.Namespace) -> None:
             f"{r.trading_signal['rating']:<14}${r.last_close:<12.2f}${r.predicted_price:<12.2f}{r.predicted_change_pct:+.2f}%"
         )
     print("\nInformational only — not financial advice.\n")
+
+
+def cmd_train_all(args: argparse.Namespace) -> None:
+    from app.models.train import train_all
+
+    outcomes = train_all(lookback_years=args.lookback_years, horizon_days=args.horizon_days, refresh=args.refresh)
+    ok = sum(1 for o in outcomes if o.trained)
+    print(f"\nTrained {ok}/{len(outcomes)} instruments in the market universe\n")
+    for o in outcomes:
+        if o.trained:
+            brier = o.metrics.get("classification_brier_score", "n/a") if o.metrics else "n/a"
+            print(f"  OK    {o.ticker:<10} brier={brier}")
+        else:
+            print(f"  FAIL  {o.ticker:<10} {o.error}")
+    print()
 
 
 def cmd_backtest(args: argparse.Namespace) -> None:
@@ -142,8 +159,18 @@ def build_parser() -> argparse.ArgumentParser:
     predict_parser.set_defaults(func=cmd_predict)
 
     watchlist_parser = subparsers.add_parser("watchlist", help="Predict several tickers at once, ranked by confidence")
-    watchlist_parser.add_argument("tickers", nargs="+", help="Ticker symbols, e.g. AAPL MSFT GOOGL")
+    watchlist_parser.add_argument(
+        "tickers", nargs="*", help="Ticker symbols, e.g. AAPL MSFT GOOGL (default: the full curated market universe)"
+    )
     watchlist_parser.set_defaults(func=cmd_watchlist)
+
+    train_all_parser = subparsers.add_parser(
+        "train-all", help="Retrain every instrument in the curated market universe (app/universe.py)"
+    )
+    train_all_parser.add_argument("--lookback-years", type=int, default=DEFAULT_LOOKBACK_YEARS)
+    train_all_parser.add_argument("--horizon-days", type=int, default=PREDICTION_HORIZON_DAYS)
+    train_all_parser.add_argument("--refresh", action="store_true", help="Bypass the data cache, force a fresh fetch")
+    train_all_parser.set_defaults(func=cmd_train_all)
 
     backtest_parser = subparsers.add_parser("backtest", help="Walk-forward backtest a ticker's strategy performance")
     backtest_parser.add_argument("ticker", help="Ticker symbol, e.g. AAPL")

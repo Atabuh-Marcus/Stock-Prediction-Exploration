@@ -81,6 +81,19 @@ button.secondary {
   margin-bottom: 16px;
 }
 
+.asset-hint {
+  margin: -12px 0 20px;
+}
+
+.asset-hint code {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+}
+
 .status.error { color: var(--down); }
 
 .result-grid {
@@ -373,6 +386,85 @@ button.secondary {
 }
 
 .data-table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+.markets-group {
+  margin-bottom: 16px;
+}
+
+.markets-group caption {
+  text-align: left;
+  padding: 10px 14px 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.markets-row {
+  cursor: pointer;
+}
+
+.markets-row:hover td {
+  background: rgba(79, 124, 255, 0.08);
+}
+
+.live-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.live-chart-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.live-chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#liveInterval {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--up);
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--up);
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+}
 
 .advanced-grid {
   display: grid;

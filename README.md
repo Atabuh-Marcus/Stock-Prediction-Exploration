@@ -112,6 +112,31 @@ reuse the saved model until you hit Retrain.
 
 All of `/predict`, `/train`, and `/backtest` accept `refresh=true` to bypass the data cache.
 
+### Daily automation (macOS)
+
+`scripts/daily_predict.sh` runs `stockpred watchlist` for a fixed ticker list (edit the `TICKERS`
+line in that file to change it) — this is what actually builds up the History tab over time, since
+predictions otherwise only happen when someone opens the app. It's scheduled via a `launchd` agent:
+
+```bash
+cp scripts/com.atabuhmarcus.stockprediction.dailypredict.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.atabuhmarcus.stockprediction.dailypredict.plist
+```
+
+Runs weekdays at 6pm local time (after US market close in any US timezone) — edit the `Hour`/`Minute`
+values in the plist to change it, then `launchctl bootout` and re-`bootstrap` to apply. Output logs to
+`prediction_log/daily_run.log`. To check status, run it once on demand, or remove it entirely:
+
+```bash
+launchctl print gui/$(id -u)/com.atabuhmarcus.stockprediction.dailypredict   # status
+launchctl kickstart gui/$(id -u)/com.atabuhmarcus.stockprediction.dailypredict   # run now
+launchctl bootout gui/$(id -u)/com.atabuhmarcus.stockprediction.dailypredict   # stop + remove
+```
+
+This only runs while your Mac is on and awake at the scheduled time — a missed run (laptop asleep,
+off, etc.) is just skipped, not queued. If you need it to run regardless of your machine's state,
+that needs a cloud runner (e.g. a scheduled GitHub Actions workflow) instead.
+
 ### Notebook
 
 ```bash

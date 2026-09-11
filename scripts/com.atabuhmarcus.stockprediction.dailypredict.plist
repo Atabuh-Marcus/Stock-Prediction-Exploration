@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.atabuhmarcus.stockprediction.dailypredict</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>/Users/atabuhmarcus/Stocks_Prediction/scripts/daily_predict.sh</string>
+    </array>
+
+    <!-- Runs weekdays at 6pm local time — safely after US market close (4pm ET)
+         in every US timezone. Edit Hour/Minute below to change the time. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/atabuhmarcus/Stocks_Prediction/prediction_log/daily_run.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/atabuhmarcus/Stocks_Prediction/prediction_log/daily_run.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

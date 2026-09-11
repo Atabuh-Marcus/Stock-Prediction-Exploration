@@ -141,6 +141,24 @@ Everything below was caught by actually running the thing against live providers
   CDN lesson from the original build — zero console errors, all three additions confirmed rendering
   with real data via screenshots.
 
+## 7. Daily automation
+
+The History tab only accumulates data when a prediction actually runs, which otherwise only happens
+when someone opens the app — so it added a scheduled job instead of staying manual-only:
+
+- `scripts/daily_predict.sh`: activates the venv and runs `stockpred watchlist` for a fixed ticker
+  list (AAPL, MSFT, GOOGL, AMZN — edit the `TICKERS` line to change it).
+- `scripts/com.atabuhmarcus.stockprediction.dailypredict.plist`: a macOS `launchd` agent running that
+  script weekdays at 6pm local time, installed to `~/Library/LaunchAgents/`. Chosen over a cloud
+  scheduler (e.g. GitHub Actions) for this pass since it needs no API keys leaving the machine and no
+  changes to what's gitignored — the tradeoff is it only runs while the Mac is on and awake at the
+  scheduled time; a missed run is skipped, not queued.
+- Verified through the actual production path, not just direct script execution: installed via
+  `launchctl bootstrap`, confirmed the calendar-interval schedule registered correctly for all 5
+  weekdays, then fired it on demand via `launchctl kickstart` and confirmed the output and exit code
+  (0) came back clean, with the prediction-log dedup logic correctly preventing duplicate rows across
+  the multiple test runs done the same day.
+
 ## Known limitations
 
 - Next-day directional accuracy is close to random (~50–52% in testing) — expected for a model using
